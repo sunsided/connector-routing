@@ -41,6 +41,9 @@ pub enum Kind {
     Obstacle,
     /// A segment and the region boundary: zero.
     Wall,
+    /// Two obstacle sides (only in full nudging, where obstacles move): at least the
+    /// separation.
+    Boxes,
     /// A segment and the far end of a perpendicular segment of the same route: zero, so
     /// no segment of a route reverses its direction (the route keeps its shape).
     Shape,
@@ -119,6 +122,11 @@ pub(crate) fn obstacle_objects(rects: &[Rect], axis: crate::geom::Axis) -> Vec<O
 ///
 /// Walls bound everything and are added implicitly.
 pub(crate) fn generate(objects: &[Object]) -> Vec<Constraint> {
+    generate_with(objects, false)
+}
+
+/// [`generate`], with constraints between obstacle sides too if `boxes`.
+pub(crate) fn generate_with(objects: &[Object], boxes: bool) -> Vec<Constraint> {
     // Events at one coordinate: obstacle closes, segment opens, segment closes, obstacle
     // opens, so open obstacle interiors and closed segments overlap correctly.
     let mut events: Vec<(i32, u8, usize)> = Vec::with_capacity(2 * objects.len());
@@ -166,13 +174,13 @@ pub(crate) fn generate(objects: &[Object]) -> Vec<Constraint> {
                 (Some(objects[i].item), above),
             ] {
                 if let (Some(l), Some(r)) = (left, right) {
-                    push(&mut constraints, l, r);
+                    push(&mut constraints, l, r, boxes);
                 }
             }
         } else {
             active.remove(&k);
             if let (Some(l), Some(r)) = (below, above) {
-                push(&mut constraints, l, r);
+                push(&mut constraints, l, r, boxes);
             }
         }
     }
@@ -180,12 +188,14 @@ pub(crate) fn generate(objects: &[Object]) -> Vec<Constraint> {
     constraints.into_iter().collect()
 }
 
-/// Adds the constraint between `left` and `right` if at least one of them is a segment.
-fn push(constraints: &mut BTreeSet<Constraint>, left: Item, right: Item) {
+/// Adds the constraint between `left` and `right` if at least one of them is a segment,
+/// or between obstacle sides if `boxes`.
+fn push(constraints: &mut BTreeSet<Constraint>, left: Item, right: Item, boxes: bool) {
     let is_segment = |item: Item| matches!(item, Item::Segment(_));
     let is_wall = |item: Item| matches!(item, Item::WallLow | Item::WallHigh);
     let kind = match (is_segment(left), is_segment(right)) {
         (true, true) => Kind::Segments,
+        (false, false) if boxes && !is_wall(left) && !is_wall(right) => Kind::Boxes,
         (false, false) => return,
         _ if is_wall(left) || is_wall(right) => Kind::Wall,
         _ => Kind::Obstacle,

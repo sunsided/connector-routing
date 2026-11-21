@@ -22,6 +22,7 @@
 //! while moving obstacles (Dwyer, Marriott and Wybrow 2006).
 
 mod constraints;
+mod full;
 mod order;
 mod segments;
 mod solve;
@@ -147,6 +148,88 @@ pub fn nudge(
     }
 }
 
+/// A drawing after full nudging: moved boxes and the routes between them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FullNudged {
+    /// The boxes, in input order: moved, and grown where their ports need more room.
+    pub boxes: Vec<Rect>,
+    /// One polyline per route, point for point like [`Route::points`].
+    pub routes: Vec<Vec<Point>>,
+}
+
+/// Full nudging (arXiv 2309.01671): moves boxes as well as segments so that boxes,
+/// segments and ports keep [`Config::separation`] apart, packing the drawing towards
+/// low coordinates. Ports move with their boxes. `boxes` are the obstacles the routes
+/// avoid, and every port must lie on a box boundary to move with it.
+///
+/// Returns `None` if the separation cannot be met; constrained [`nudge`] still applies
+/// then.
+///
+/// # Examples
+///
+/// ```
+/// use connector_routing::{Rect, nudge, pipeline};
+///
+/// let boxes = [Rect::new(0, 0, 20, 10), Rect::new(200, 0, 220, 10)];
+/// let config = pipeline::Config { full_nudging: true, ..pipeline::Config::default() };
+/// let drawing = pipeline::draw(&boxes, &[(0, 1)], &config)?;
+/// // The gap between the boxes shrinks to what the route needs.
+/// assert!(drawing.boxes[1].min.x < 200);
+/// # Ok::<(), connector_routing::Error>(())
+/// ```
+#[must_use]
+pub fn full(
+    graph: &RoutingGraph,
+    boxes: &[Rect],
+    routes: &[Route],
+    config: &Config,
+) -> Option<FullNudged> {
+    let nets: Vec<Net> = routes.iter().map(|r| Net::from_route(graph, r)).collect();
+    let mut segments = Segments::new(graph, &nets);
+    let mut moved = boxes.to_vec();
+    let separation = i64::from(config.separation);
+    if !full::pass(
+        graph,
+        &mut moved,
+        &nets,
+        &mut segments,
+        Axis::Y,
+        separation,
+        &[],
+    ) {
+        return None;
+    }
+
+    let kisses = kiss_arcs(graph, &nets, &segments);
+    if !full::pass(
+        graph,
+        &mut moved,
+        &nets,
+        &mut segments,
+        Axis::X,
+        separation,
+        &kisses,
+    ) {
+        return None;
+    }
+
+    let polylines = routes
+        .iter()
+        .enumerate()
+        .map(|(i, r)| {
+            bend_vertices(graph, &r.vertices)
+                .into_iter()
+                .map(|v| segments.position(graph, i, v, &nets))
+                .collect()
+        })
+        .collect();
+
+    Some(FullNudged {
+        boxes: moved,
+        routes: polylines,
+    })
+}
+
 /// Nudges arbitrary nets (connector paths or hyperedge trees) and returns, per net,
 /// its segments as `(start, end)` pairs with the smallest achieved separation.
 #[must_use]
@@ -262,7 +345,11 @@ fn far_item(
         }
     }
 
-    Item::Bound(graph.point(far).coordinate(perpendicular.axis))
+    // A port: its terminal point along the pass axis, which full nudging can move.
+    match segments.terminal_point(perpendicular.net, far, perpendicular.axis.other()) {
+        Some(t) => Item::Segment(t),
+        None => Item::Bound(graph.point(far).coordinate(perpendicular.axis)),
+    }
 }
 
 /// The segments of the routes as `(route, axis, line coordinate)`, in the index order
@@ -360,9 +447,9 @@ fn pass_objects(
     axis: Axis,
     extra: &[(usize, usize)],
 ) -> Vec<Object> {
-    let mut required = segments.terminal_arcs(nets, axis);
-    required.extend(fixed_side_arcs(graph, obstacles, nets, segments, axis));
-    let ranks = order::line_ranks(graph, nets, segments, axis, &required, extra);
+    let terminal = segments.terminal_arcs(nets, axis);
+    let required = fixed_side_arcs(graph, obstacles, nets, segments, axis);
+    let ranks = order::line_ranks(graph, nets, segments, axis, (&required, &terminal), extra);
     let mut objects = constraints::obstacle_objects(obstacles, axis.other());
     for (id, s) in segments.list.iter().enumerate() {
         if s.axis == axis {
@@ -390,14 +477,17 @@ fn fixed_side_arcs(
     let across = axis.other();
     let mut by_line: BTreeMap<i32, Vec<usize>> = BTreeMap::new();
     for (id, s) in segments.list.iter().enumerate() {
-        if s.axis == axis && s.vertices.len() > 1 {
+        if s.axis == axis {
             by_line.entry(segments.line[id]).or_default().push(id);
         }
     }
 
     let mut arcs = Vec::new();
     for (&line, members) in &by_line {
-        for &m in members.iter().filter(|&&m| !segments.list[m].fixed) {
+        for &m in members
+            .iter()
+            .filter(|&&m| !segments.list[m].fixed && segments.list[m].vertices.len() > 1)
+        {
             let (lo, hi) = segments.extent(graph, nets, m);
             // Which sides of the line an obstacle blocks along this segment.
             let blocked = |high_side: bool| {
@@ -416,8 +506,10 @@ fn fixed_side_arcs(
             for &f in members.iter().filter(|&&f| {
                 segments.list[f].fixed && segments.list[f].net != segments.list[m].net
             }) {
+                // Port points (single vertices) count when they touch the segment.
                 let (flo, fhi) = segments.extent(graph, nets, f);
-                if flo.max(lo) < fhi.min(hi) {
+                let point = segments.list[f].vertices.len() == 1;
+                if flo.max(lo) < fhi.min(hi) || (point && lo <= flo && flo <= hi) {
                     arcs.push(if high_blocked { (m, f) } else { (f, m) });
                 }
             }

@@ -344,8 +344,9 @@ The result centres single segments in their alley and spreads bundles evenly.
 bundle. Each component now takes its largest gap; if that is below the cap, only the
 bottleneck (the members with the least slack) is placed, and the rest get a new, larger
 gap in the next round, with the placed segments as constants. On the 300-connector bench
-this cut the overlapping segment pairs from 8,985 to 7,238; the rest come from genuinely
-overfull lines (see open questions).
+this cut the overlapping segment pairs from 8,985 to 7,238 at first; the later
+port-point and terminal-tier ordering changes needed by full nudging moved it to 9,615.
+The rest come from genuinely overfull lines (see open questions).
 
 **Projection (`Placement::Project`).** The alternative of Wybrow et al.: desired positions
 (the middle of the alley for the middle segment of a Z or S, the current line otherwise:
@@ -357,9 +358,12 @@ rationals; the result is rounded per block and repaired into the extreme feasibl
 positions in scan order, which keeps every constraint. Not checked against the VPSC paper
 (not available here; implemented from its description in Wybrow 2009 and the thesis).
 Compared on the same scenes: both pass the same property tests (obstacles, ports,
-topology, separation, crossings); on the 300-connector bench the projection moves
-segments 83,412 units in total against 296,278 for spreading, at 0.43 s against 0.34 s,
-and keeps bundles at exactly the separation instead of spreading them. Every pass preserves the order of overlapping segments, and every moved
+topology, separation, crossings) and keep bundles at exactly the separation under
+projection instead of spreading them. On the 300-connector bench most components are
+held at gap 0 by overfull lines, water-filling places them the same way in both modes,
+and the totals are close (about 108,000 units of movement each; projection 0.64 s
+against 0.26 s); before the ordering changes they differed more (83,412 against
+296,278). Every pass preserves the order of overlapping segments, and every moved
 segment sweeps an obstacle-free rectangle, so routes keep their topology (Marriott et
 al. 2014's notion of topology-preserving edge moves). The property test checks exactly
 that (vertical segments sweep with their original extent in the first pass, horizontal
@@ -376,17 +380,34 @@ ones.
    side so the edge becomes an L bending away from the barycentre of the box centres.
    Ports on a side are ordered by the circular order of their edges and spread evenly.
    Self-loops get neighbouring ports on the least populated side.
-2. **Routing graph.** The OVG. The paper's channel graph (channels between box pairs,
-   representative lines, contained channels dropped) is not implemented: it is a
-   sparser graph whose routes the OVG also contains, so it would only trade quality for
-   speed (open question).
+2. **Routing graph.** The OVG, or the paper's channel graph (`GraphKind::Channels`,
+   `pipeline::channel_graph`): for every box the narrowest empty channel to its right
+   (above) towards a box or the frame, its centre line as representative, channels that
+   meet a channel whose extent across contains theirs dropped, plus a representative
+   from every port outwards; vertices at crossings and ports. Overlapping
+   representatives on one line are merged so the graph stays a partial grid. If an edge
+   cannot be routed on it, the drawing falls back to the OVG (on random grid layouts the
+   channel graph routed 97 of 100 drawings).
 3. **Routing** with bend-minimal shortest paths tracking the entry direction (A*
    instead of the paper's Dijkstra; same optimum).
 4. **Path ordering and crossing reduction** as above.
 5. **Nudging** (the paper's constrained mode: boxes and ports fixed).
 
-The paper's full nudging mode, where boxes may grow and move, belongs to a layout engine
-and is out of scope; the exported constraints are its interface.
+**Full nudging** (`pipeline::Config::full_nudging`, `nudge::full`): box sides become
+variables too. Boxes keep at least their size and stay the separation apart (new
+constraint kind between obstacle sides), routes keep the separation to boxes, and every
+port is tied to its box: a port on a side across the pass axis moves with that side, a
+port on a side along it slides between the box's sides, so a box grows when its ports
+need room, as in the paper. Ties make the constraint graph cyclic, so the leftmost
+solution comes from Bellman-Ford longest paths over tied groups (a positive cycle means
+infeasible, and the drawing falls back to constrained nudging). The leftmost solution
+minimises every position and so the drawing's extent and every box's growth at once;
+the paper weights these in an LP instead. Testing found two interactions: segment
+extents must follow moved ports, and a route running along a box side through another
+route's port must cross that port's segment rather than enter the box (fixed-side arcs
+now include port points and win over terminal arcs). With those, full nudging applied
+to all of 100 random grid drawings; tests check that boxes never shrink, stay apart,
+keep their ports, and that routes avoid the moved boxes.
 
 ## Hyperedges (Wybrow et al. 2012)
 
@@ -481,7 +502,7 @@ not available; implemented from secondary descriptions).
 | Wybrow, Marriott, Stuckey, *Incremental Connector Routing*, GD 2005 | poly-line visibility graph, invisibility graph, removal pruning, hidden regions | checked; hidden-region pruning only without bend costs |
 | Dwyer, Marriott, Wybrow, *Integrating Edge Routing into Force-Directed Layout*, GD 2006 | exported topology constraints, crossing counting on shared paths | checked (routing parts only) |
 | Wybrow, PhD thesis, 2008 | libavoid background, poly-line cost formula with angle penalty | checked (cost formula; angle term by table) |
-| Hegemann, Wolff, *A Simple Pipeline for Orthogonal Graph Drawing*, arXiv 2309.01671 | port assignment, crossing reduction, nudging LP, fixed look directions | checked; LP replaced by exact max-gap; channel graph not built; fixed look directions replaced (regression test) |
+| Hegemann, Wolff, *A Simple Pipeline for Orthogonal Graph Drawing*, arXiv 2309.01671 | port assignment, channel graph, crossing reduction, constrained and full nudging, fixed look directions | checked; LP replaced by exact max-gap (constrained) and Bellman-Ford packing (full); fixed look directions replaced (regression test) |
 | Gladisch et al., *Orthogonal Edge Routing for the EditLens*, arXiv 1612.05064 | incremental OVG update rules | checked; applied to the Wybrow OVG |
 | Nachmanson, Chen, *Browsing Large Graphs with Tile Pyramids and Sleeve Routing in the Browser*, arXiv 2605.17498 | sleeve routing, vertex cover batching, straight-line first | checked; vertex collapse replaced by wall exits for endpoints in slits |
 | McMurchie, Ebeling, *PathFinder*, FPGA 1995 | negotiated congestion | not checked |
@@ -500,8 +521,8 @@ not available; implemented from secondary descriptions).
    order, invalidation reports for scene mutations (Wybrow 2005, Dwyer 2006).
 4. Post-processing: path ordering, crossing count and reduction, constraint generation,
    exact difference-constraint nudging.
-5. Pipeline per arXiv 2309.01671: port assignment, full run (channel routing graph not
-   built).
+5. Pipeline per arXiv 2309.01671: port assignment, OVG or channel routing graph, full
+   run, constrained or full nudging.
 6. Hyperedges (Wybrow 2012): separated OVG, Heuristics 1 and 2, local improvement.
 7. Sleeve routing: exact CDT, dual Dijkstra, funnel, vertex cover batching.
 8. Poly-line routing (Wybrow 2005): visibility and invisibility graphs, incremental
@@ -523,7 +544,7 @@ README's status list.
 - **Dense scenes leave overlaps.** On the 300-connector bench, lines that PathFinder
   considers within capacity (a channel crossing a free band has unbounded capacity) carry
   long chains of mutually ordered segments that the channel cannot hold at separation 1;
-  7,238 overlapping pairs remain. Blocking other connectors' ports in the router (as
+  about 9,600 overlapping pairs remain. Blocking other connectors' ports in the router (as
   libavoid does) was tried and made it worse (10,509), so it is not in. A capacity model
   per line rather than per cross-section would address it.
 - **Forced orders.** With obstacles, port-pinned segments can force orders that cost
@@ -537,7 +558,9 @@ README's status list.
   for sleeves). Exact geometry, approximate comparison of nearly equal lengths.
 - **Overlapping obstacles** are allowed for orthogonal routing and poly-lines, rejected
   for sleeve routing (the CDT needs non-crossing constraints).
-- **Not built:** the channel routing graph of 2309.01671, its full nudging mode (box
-  growth), sleeve vertex collapse (replaced by wall exits) and edge hints.
+- **Not built:** sleeve vertex collapse as such (replaced by wall exits) and the sleeve
+  edge hints between zoom levels.
+- **Full nudging objective.** Leftmost (compact) solution instead of the paper's
+  weighted LP. Default: off; constrained nudging is the default.
 - **Publishing.** `heuristic-search` and `multiobjective-search` are path dependencies
   with a version and must be published first.

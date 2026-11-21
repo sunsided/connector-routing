@@ -128,7 +128,7 @@ impl Problem<'_> {
     /// when `relaxed`, zero.
     fn gap(kind: Kind, t: i64, relaxed: bool) -> i64 {
         match kind {
-            Kind::Segments => t,
+            Kind::Segments | Kind::Boxes => t,
             Kind::Obstacle if !relaxed => t,
             Kind::Obstacle | Kind::Wall | Kind::Shape => 0,
         }

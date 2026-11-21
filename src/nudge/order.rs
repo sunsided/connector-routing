@@ -194,6 +194,9 @@ fn edge_key(graph: &RoutingGraph, at: VertexId, d: Direction) -> (VertexId, Dire
     }
 }
 
+/// An order arc `(before, after)` between two segments on a line.
+type Arc = (usize, usize);
+
 /// For every graph edge along `axis` used by at least two nets, the nets using it.
 /// Keyed by the edge's low vertex.
 fn edge_users(nets: &[Net], axis: Axis) -> BTreeMap<VertexId, Vec<usize>> {
@@ -216,7 +219,8 @@ fn edge_users(nets: &[Net], axis: Axis) -> BTreeMap<VertexId, Vec<usize>> {
 }
 
 /// The rank of every segment along `axis` among the segments on its line: a
-/// topological order of the per-edge orders, the `required` arcs and the `extra` arcs,
+/// topological order of the per-edge orders, the `required` and `terminal` arcs and the
+/// `extra` arcs,
 /// ties by low end and id. On a cycle the extra arcs are dropped first, then the soft
 /// orders (pairs that cross once in either order), and only then is a cycle broken.
 pub(crate) fn line_ranks(
@@ -224,7 +228,7 @@ pub(crate) fn line_ranks(
     nets: &[Net],
     segments: &Segments,
     axis: Axis,
-    required: &[(usize, usize)],
+    (required, terminal): (&[Arc], &[Arc]),
     extra: &[(usize, usize)],
 ) -> Vec<u32> {
     let forward = match axis {
@@ -264,14 +268,18 @@ pub(crate) fn line_ranks(
     }
 
     let mut ranks = alloc::vec![0; segments.list.len()];
-    // Try everything, then without the kiss arcs, then without the soft orders.
-    let all: BTreeSet<(usize, usize)> = arcs.iter().chain(&soft).chain(extra).copied().collect();
-    let with_soft: BTreeSet<(usize, usize)> = arcs.iter().chain(&soft).copied().collect();
-    let with_extra: BTreeSet<(usize, usize)> = arcs.iter().chain(extra).copied().collect();
+    // Try everything, then without the kiss arcs, then without the soft orders, then
+    // without the terminal arcs (a route along an obstacle side through another route's
+    // port must cross that route's port segment; the free side wins).
+    let hard: BTreeSet<(usize, usize)> = arcs.iter().chain(terminal).copied().collect();
+    let all: BTreeSet<(usize, usize)> = hard.iter().chain(&soft).chain(extra).copied().collect();
+    let with_soft: BTreeSet<(usize, usize)> = hard.iter().chain(&soft).copied().collect();
+    let with_extra: BTreeSet<(usize, usize)> = hard.iter().chain(extra).copied().collect();
     for members in lines.values() {
         let order = topological(graph, segments, members, &all)
             .or_else(|| topological(graph, segments, members, &with_soft))
             .or_else(|| topological(graph, segments, members, &with_extra))
+            .or_else(|| topological(graph, segments, members, &hard))
             .or_else(|| topological(graph, segments, members, &arcs))
             .unwrap_or_else(|| breaking_cycles(graph, segments, members, &arcs));
         for (rank, &id) in order.iter().enumerate() {

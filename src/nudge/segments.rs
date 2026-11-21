@@ -50,6 +50,8 @@ pub(crate) struct Segments {
     pub(crate) line: Vec<i32>,
     /// The segment of each net edge, keyed by `(net, vertex, Right or Up)`.
     of_edge: BTreeMap<(usize, VertexId, Direction), usize>,
+    /// The single-vertex terminal segments, keyed by `(net, vertex, axis)`.
+    terminal: BTreeMap<(usize, VertexId, Axis), usize>,
 }
 
 impl Segments {
@@ -59,6 +61,7 @@ impl Segments {
             list: Vec::new(),
             line: Vec::new(),
             of_edge: BTreeMap::new(),
+            terminal: BTreeMap::new(),
         };
         for (index, net) in nets.iter().enumerate() {
             for (v, dir) in net.edges() {
@@ -88,6 +91,7 @@ impl Segments {
                 continue;
             }
 
+            self.terminal.insert((index, t, axis), self.list.len());
             self.line.push(graph.point(t).coordinate(axis.other()));
             self.list.push(Segment {
                 net: index,
@@ -184,6 +188,11 @@ impl Segments {
         self.of_edge.get(&(net, low, forward)).copied()
     }
 
+    /// The single-vertex terminal segment of net `net` at `v` along `axis`, if any.
+    pub(crate) fn terminal_point(&self, net: usize, v: VertexId, axis: Axis) -> Option<usize> {
+        self.terminal.get(&(net, v, axis)).copied()
+    }
+
     /// The current coordinate along its axis of the end of segment `s` at vertex `end`:
     /// the line of the perpendicular segment of the same net through `end`, or the
     /// vertex's own coordinate where the run ends without a bend.
@@ -205,7 +214,11 @@ impl Segments {
             }
         }
 
-        graph.point(end).coordinate(segment.axis)
+        // A port: where its terminal point is now (full nudging moves ports).
+        match self.terminal_point(segment.net, end, segment.axis.other()) {
+            Some(t) => self.line[t],
+            None => graph.point(end).coordinate(segment.axis),
+        }
     }
 
     /// The current extent `(low, high)` of segment `s` along its axis.
@@ -227,6 +240,15 @@ impl Segments {
         nets: &[Net],
     ) -> Point {
         let mut p = graph.point(v);
+        for axis in [Axis::X, Axis::Y] {
+            if let Some(s) = self.terminal_point(net, v, axis) {
+                match axis {
+                    Axis::X => p.y = self.line[s],
+                    Axis::Y => p.x = self.line[s],
+                }
+            }
+        }
+
         let arms = nets[net].arms_at(v);
         for dir in arms.iter() {
             if let Some(s) = self.of_edge(graph, net, v, dir) {

@@ -238,14 +238,32 @@ pub fn route_all(
     connectors: &[Connector<PortId>],
     config: &Config,
 ) -> Result<Routing, Error> {
-    let graph = scene.graph();
-    let weights = config.objective.weights(graph)?;
     let ends: Vec<Endpoints> = connectors
         .iter()
         .map(|c| endpoints(scene, c.source, c.target))
         .collect::<Result<_, _>>()?;
+
+    route_all_on(scene.graph(), &scene.rects(), &ends, config)
+}
+
+/// [`route_all`] on any routing graph (such as the channel graph of
+/// [`pipeline::channel_graph`](crate::pipeline::channel_graph)) around `obstacles`, for
+/// connectors given by their graph endpoints.
+///
+/// # Errors
+///
+/// [`Error::CostOverflow`] if the objective's weights overflow, [`Error::NoRoute`] if a
+/// connector's endpoints are not connected.
+pub fn route_all_on(
+    graph: &crate::graph::RoutingGraph,
+    obstacles: &[crate::geom::Rect],
+    ends: &[Endpoints],
+    config: &Config,
+) -> Result<Routing, Error> {
+    let weights = config.objective.weights(graph)?;
+    let ends = ends.to_vec();
     let order = net_order(graph, &ends);
-    let resources = Resources::new(graph, &scene.rects(), config.separation);
+    let resources = Resources::new(graph, obstacles, config.separation);
     let mut congestion = Congestion {
         resources: &resources,
         occupancy: alloc::vec![0; resources.len()],
@@ -255,7 +273,7 @@ pub fn route_all(
         crossing_penalty: config.crossing_penalty,
     };
 
-    let mut routes: Vec<Option<Route>> = alloc::vec![None; connectors.len()];
+    let mut routes: Vec<Option<Route>> = alloc::vec![None; ends.len()];
     let mut iterations = 0;
     while iterations < config.max_iterations.max(1) {
         iterations += 1;
@@ -296,8 +314,18 @@ pub fn route_all(
 /// the sum over resources of tracks used beyond capacity (see [`route_all`]).
 #[must_use]
 pub fn overuse(scene: &Scene, routes: &[Route], separation: u32) -> u64 {
-    let graph = scene.graph();
-    let resources = Resources::new(graph, &scene.rects(), separation);
+    overuse_on(scene.graph(), &scene.rects(), routes, separation)
+}
+
+/// [`overuse`] on any routing graph around `obstacles`.
+#[must_use]
+pub fn overuse_on(
+    graph: &crate::graph::RoutingGraph,
+    obstacles: &[crate::geom::Rect],
+    routes: &[Route],
+    separation: u32,
+) -> u64 {
+    let resources = Resources::new(graph, obstacles, separation);
     let mut congestion = Congestion {
         resources: &resources,
         occupancy: alloc::vec![0; resources.len()],

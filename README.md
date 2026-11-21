@@ -15,10 +15,9 @@ Orthogonal routing:
 - [x] Reports of the connectors a scene change invalidates or may improve
 - [x] Path ordering in shared channels, required crossings, crossing reduction
 - [x] Nudging: scan-line separation constraints (exported as data) solved exactly as difference constraints with water-filling, no LP; or VPSC projection of desired positions
-- [x] Pipeline of arXiv 2309.01671: port assignment, routing, crossing reduction, ordering, nudging
+- [x] Pipeline of arXiv 2309.01671: port assignment, visibility or channel routing graph, routing, crossing reduction, ordering, constrained or full nudging (boxes move and grow)
 - [x] Hyperedges (Wybrow et al. 2012): Steiner trees by both heuristics with segment-shifting improvement, nudged like connectors
 - [x] Pareto fronts over length, bends and crossings (feature `multi-objective`, via `multiobjective-search`)
-- [ ] The channel routing graph of arXiv 2309.01671 (the OVG is used instead)
 
 Any-angle routing:
 
