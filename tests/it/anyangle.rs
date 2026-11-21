@@ -200,3 +200,61 @@ fn sleeve_reaches_a_shared_wall() {
     let route = polyline.route(c).unwrap().to_vec();
     check::polyline(&route, &rects).unwrap();
 }
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+
+    /// Hidden-region pruning changes no cost, and segment and angle penalties keep
+    /// routes valid and never make them cheaper than plain length.
+    #[test]
+    fn pruning_and_angle_penalty(
+        rects in disjoint_rects(),
+        a in (0..50, 0..50),
+        b in (0..50, 0..50),
+        segment in 0_u64..20,
+        angle in 1_u64..40,
+    ) {
+        let (a, b) = (Point::new(a.0, a.1), Point::new(b.0, b.1));
+        prop_assume!(a != b && !rects.iter().any(|r| r.interior_contains(a) || r.interior_contains(b)));
+        let cost = |config: Config| {
+            let mut router = PolylineRouter::new(config);
+            for r in &rects {
+                router.add_obstacle(*r).unwrap();
+            }
+            let c = router.add_connector(a, b).unwrap();
+            if let Some(route) = router.route(c) {
+                check::polyline(route, &rects).unwrap();
+            }
+            router.cost(c)
+        };
+        let plain = cost(Config::default());
+        prop_assert_eq!(plain, cost(Config { hidden_region_pruning: false, ..Config::default() }));
+        let segmented = cost(Config { segment_penalty: segment, ..Config::default() });
+        prop_assert!(segmented >= plain);
+        let angled = cost(Config { angle_penalty: angle, ..Config::default() });
+        prop_assert_eq!(plain.is_some(), angled.is_some());
+        prop_assert!(angled >= plain);
+    }
+}
+
+/// The angle penalty prefers one sharp turn less than two gentle ones in a way that a
+/// pure length cost does not: a large `beta` straightens a route that bends around a
+/// corner it barely touches.
+#[test]
+fn angle_classes() {
+    let route_cost = |beta: u64| {
+        let mut router = PolylineRouter::new(Config {
+            angle_penalty: beta,
+            ..Config::default()
+        });
+        router.add_obstacle(Rect::new(10, -1, 20, 1)).unwrap();
+        let c = router
+            .add_connector(Point::new(0, 0), Point::new(30, 0))
+            .unwrap();
+        (router.route(c).unwrap().len(), router.cost(c).unwrap())
+    };
+    let (len0, cost0) = route_cost(0);
+    let (_, cost1) = route_cost(10);
+    assert_eq!(len0, 4);
+    assert!(cost1 > cost0, "bends cost extra: {cost0} {cost1}");
+}

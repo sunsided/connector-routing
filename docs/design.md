@@ -420,13 +420,23 @@ and the invisibility graph for incremental updates: every rejected node pair rem
 one obstacle that blocks it, so removing an obstacle retests only its pairs. Object
 removal reports only connectors whose lower bound through the freed region beats their
 current cost (or that had no route). The bound is the larger of the straight distance
-and the distances to the region, weaker than the paper's exact closed form but safe. The
-paper's "hidden region" pruning (shortest paths bend around corners by less than 180
-degrees) is not implemented: it only shrinks the graph. Lengths are fixed point
+and the distances to the region, weaker than the paper's exact closed form but safe.
+
+The paper's "hidden region" pruning is implemented: at a corner of exactly one obstacle a
+route may only go straight on or turn towards the obstacle (around it); any other turn
+could be cut short. It is exact for pure shortest paths only: with a segment penalty the
+property test found a route that turns the other way to save a bend, so pruning is
+applied only when the segment and angle penalties are zero. Search states are
+`(node, previous node)`, so bends and angles can be charged. Lengths are fixed point
 (`2^8` per unit), rounded up per edge against a heuristic rounded down, which keeps A*
-admissible and consistent. Costs follow the thesis' formula
-`length + segment_penalty * bends + crossing_penalty * crossings`; the angle term
-`beta * a * log(a + 1) / 10` needs floats and is not implemented (open question).
+admissible and consistent.
+
+Costs follow the thesis' formula
+`length + alpha * bends + beta * a * ln(a + 1) / 10 + gamma * crossings`, with `a` the
+turning angle scaled to `0..=10`. The angle term is evaluated without floating point: the
+cosine of the turn (integer square root of the scaled squared norms) selects one of 101
+angle classes, and a precomputed fixed-point table gives `a ln(a + 1) / 10`. Straight
+continuations through a node are not bends (the thesis' `s = 0` for `a = 0`).
 
 ## Multi-objective (feature `multi-objective`)
 
@@ -450,9 +460,9 @@ not available; implemented from secondary descriptions).
 | same | nudging: VPSC projection to desired positions | alternative (max-gap + midpoint, exact); VPSC open |
 | Marriott, Stuckey, Wybrow, *Seeing Around Corners*, Diagrams 2014 | obstacle-hugging routes, 1-bend visibility graph | checked; lazy edges; not exact in tests, so opt-in, not default |
 | Wybrow, Marriott, Stuckey, *Orthogonal Hyperedge Routing*, Diagrams 2012 | hyperedge Heuristics 1 and 2 (Fig. 6), local improvement | checked; segment shifting subsumes junction moving |
-| Wybrow, Marriott, Stuckey, *Incremental Connector Routing*, GD 2005 | poly-line visibility graph, invisibility graph, removal pruning | checked |
+| Wybrow, Marriott, Stuckey, *Incremental Connector Routing*, GD 2005 | poly-line visibility graph, invisibility graph, removal pruning, hidden regions | checked; hidden-region pruning only without bend costs |
 | Dwyer, Marriott, Wybrow, *Integrating Edge Routing into Force-Directed Layout*, GD 2006 | exported topology constraints, crossing counting on shared paths | checked (routing parts only) |
-| Wybrow, PhD thesis, 2008 | libavoid background, poly-line cost formula | checked (cost formula) |
+| Wybrow, PhD thesis, 2008 | libavoid background, poly-line cost formula with angle penalty | checked (cost formula; angle term by table) |
 | Hegemann, Wolff, *A Simple Pipeline for Orthogonal Graph Drawing*, arXiv 2309.01671 | port assignment, crossing reduction, nudging LP, fixed look directions | checked; LP replaced by exact max-gap; channel graph not built; fixed look directions replaced (regression test) |
 | Gladisch et al., *Orthogonal Edge Routing for the EditLens*, arXiv 1612.05064 | incremental OVG update rules | checked; applied to the Wybrow OVG |
 | Nachmanson, Chen, *Browsing Large Graphs with Tile Pyramids and Sleeve Routing in the Browser*, arXiv 2605.17498 | sleeve routing, vertex cover batching, straight-line first | checked; vertex collapse replaced by wall exits for endpoints in slits |
@@ -504,7 +514,6 @@ README's status list.
 - **Overlapping obstacles** are allowed for orthogonal routing and poly-lines, rejected
   for sleeve routing (the CDT needs non-crossing constraints).
 - **Not built:** the channel routing graph of 2309.01671, its full nudging mode (box
-  growth), the poly-line angle penalty and hidden-region
-  pruning, sleeve vertex collapse (replaced by wall exits) and edge hints.
+  growth), sleeve vertex collapse (replaced by wall exits) and edge hints.
 - **Publishing.** `heuristic-search` and `multiobjective-search` are path dependencies
   with a version and must be published first.

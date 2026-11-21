@@ -16,17 +16,15 @@ Orthogonal routing:
 - [x] Path ordering in shared channels, required crossings, crossing reduction
 - [x] Nudging: scan-line separation constraints (exported as data) solved exactly as difference constraints, no LP
 - [x] Pipeline of arXiv 2309.01671: port assignment, routing, crossing reduction, ordering, nudging
-- [x] Hyperedges (Wybrow et al. 2012): Steiner trees by both heuristics, nudged like connectors
+- [x] Hyperedges (Wybrow et al. 2012): Steiner trees by both heuristics with segment-shifting improvement, nudged like connectors
 - [x] Pareto fronts over length, bends and crossings (feature `multi-objective`, via `multiobjective-search`)
 - [ ] The channel routing graph of arXiv 2309.01671 (the OVG is used instead)
 - [ ] VPSC-style projection to desired positions (Wybrow 2009); a max-gap and midpoint placement is used
-- [ ] The local improvements of the hyperedge paper
 
 Any-angle routing:
 
-- [x] Sleeve routing (arXiv 2605.17498): exact constrained Delaunay triangulation, dual-graph Dijkstra, funnel algorithm, vertex-cover batching
-- [x] Incremental poly-line routing (Wybrow et al. 2005): visibility and invisibility graphs, rerouting reports, segment and crossing penalties
-- [ ] The angle penalty of the poly-line cost (needs floating point)
+- [x] Sleeve routing (arXiv 2605.17498): exact constrained Delaunay triangulation, dual-graph Dijkstra, funnel algorithm, vertex-cover batching, exits along walls between touching obstacles
+- [x] Incremental poly-line routing (Wybrow et al. 2005): visibility and invisibility graphs, rerouting reports, hidden-region pruning, segment, angle and crossing penalties
 
 See [`docs/design.md`](docs/design.md) for the models, the deviations from the papers that testing found, and the paper table.
 
