@@ -66,7 +66,7 @@ fn edit() -> impl Strategy<Value = Edit> {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(200))]
+    #![proptest_config(crate::support::cases(200))]
 
     /// The batch build equals the definition on random scenes, overlaps included.
     #[test]

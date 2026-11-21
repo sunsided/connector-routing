@@ -175,7 +175,7 @@ fn bundle_in_channel() {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(64))]
+    #![proptest_config(crate::support::cases(64))]
 
     /// Random scenes routed globally, then nudged.
     #[test]

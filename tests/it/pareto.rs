@@ -7,7 +7,7 @@ use proptest::prelude::*;
 use crate::support::rect;
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(48))]
+    #![proptest_config(crate::support::cases(48))]
 
     /// Front members are valid and mutually non-dominated; with no other routes, the
     /// optimum of every weighted sum of length and bends is on the front.

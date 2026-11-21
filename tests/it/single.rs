@@ -122,7 +122,7 @@ fn compare(
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(400))]
+    #![proptest_config(crate::support::cases(400))]
 
     /// Ports that may be left in any direction, anywhere outside obstacles: both
     /// searches find the brute-force optimum, with touching and overlapping obstacles.

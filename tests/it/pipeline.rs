@@ -39,7 +39,7 @@ fn channel_graph_edges_are_free() {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(24))]
+    #![proptest_config(crate::support::cases(24))]
 
     /// Boxes on a coarse grid with random edges (self-loops and multi-edges included):
     /// every route starts and ends at its ports, leaves and enters them outwards, and
@@ -65,7 +65,7 @@ proptest! {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(24))]
+    #![proptest_config(crate::support::cases(24))]
 
     /// Full nudging never shrinks a box, keeps boxes apart, keeps ports on their moved
     /// boxes, and routes clear of the moved boxes.

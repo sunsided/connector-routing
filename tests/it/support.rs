@@ -5,6 +5,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use connector_routing::{DirSet, Direction, Point, Port, Rect};
 use proptest::prelude::*;
 
+/// A proptest configuration with `default` cases, unless `PROPTEST_CASES` sets the count
+/// (`task test:prop`). `ProptestConfig::with_cases` alone would ignore the variable.
+pub fn cases(default: u32) -> ProptestConfig {
+    let cases = std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default);
+
+    ProptestConfig::with_cases(cases)
+}
+
 /// A random rectangle with corners in `0..=size`.
 pub fn rect(size: i32) -> impl Strategy<Value = Rect> {
     (0..size, 0..size, 1..=size / 2, 1..=size / 2)

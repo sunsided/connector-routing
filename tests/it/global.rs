@@ -83,7 +83,7 @@ fn deterministic() {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(40))]
+    #![proptest_config(crate::support::cases(40))]
 
     /// Random scenes and connectors: every route is valid and connects its ports.
     #[test]

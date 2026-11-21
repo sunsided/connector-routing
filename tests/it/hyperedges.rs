@@ -71,7 +71,7 @@ fn nudged_connected(segments: &[(Point, Point)], terminals: &[Point]) -> bool {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(48))]
+    #![proptest_config(crate::support::cases(48))]
 
     /// Both heuristics connect every terminal, avoid obstacles, cost at most the
     /// minimum spanning tree of the pairwise shortest routes, and survive nudging.

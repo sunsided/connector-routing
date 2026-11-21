@@ -74,7 +74,7 @@ fn disjoint_rects() -> impl Strategy<Value = Vec<Rect>> {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(64))]
+    #![proptest_config(crate::support::cases(64))]
 
     /// Poly-line routes are valid and as short as the independent oracle's.
     #[test]
@@ -202,7 +202,7 @@ fn sleeve_reaches_a_shared_wall() {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(64))]
+    #![proptest_config(crate::support::cases(64))]
 
     /// Hidden-region pruning changes no cost, and segment and angle penalties keep
     /// routes valid and never make them cheaper than plain length.

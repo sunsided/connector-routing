@@ -167,7 +167,7 @@ fn random_routing(
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(40))]
+    #![proptest_config(crate::support::cases(40))]
 
     /// Required crossings are symmetric and sum to the total; crossing reduction never
     /// raises the total, and every rerouted connector stays valid between its ports.
