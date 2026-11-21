@@ -185,7 +185,9 @@ fn shape_constraints(
             continue;
         }
 
-        for end in [s.low(), s.high()] {
+        // Every vertex of the run, so branches attached mid-run (hyperedge junctions)
+        // keep their direction too.
+        for &end in &s.vertices {
             let across = s.forward().left();
             for dir in [across, across.reverse()] {
                 if !nets[s.net].has_edge(end, dir) {
@@ -198,8 +200,11 @@ fn shape_constraints(
                 let perpendicular = &segments.list[p];
                 let far = if perpendicular.low() == end {
                     perpendicular.high()
-                } else {
+                } else if perpendicular.high() == end {
                     perpendicular.low()
+                } else {
+                    // The perpendicular run passes through: no end to keep apart from.
+                    continue;
                 };
                 let other = far_item(graph, nets, segments, p, far);
                 let (left, right) = if dir.is_positive() {

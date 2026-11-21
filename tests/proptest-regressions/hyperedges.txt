@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 618e755ae06fb09375d7570a8b2267cdfed211c4c9f12ac73a3bd26e0e5fc353 # shrinks to rects = [], points = {(3, 6), (8, 0), (8, 13), (9, 2)}

@@ -15,6 +15,7 @@ mod error;
 mod geom;
 pub mod global;
 mod graph;
+pub mod hyperedge;
 pub mod incremental;
 mod nets;
 pub mod nudge;

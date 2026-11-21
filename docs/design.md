@@ -362,9 +362,15 @@ A net with more than two ports is routed as a rectilinear Steiner tree over the
 "separated" OVG (each vertex split into a horizontal and a vertical copy joined by a
 bend-penalty edge), with Heuristic 1 (shortest path terminal forest, Kruskal over bridge
 edges, MTST; Long et al.) and Heuristic 2 (interleaved SPTF and MCST, committing a bridge
-when its cost is at most twice the SPTF frontier). The local improvements of section 3
-(merge parallel routes by moving junctions; shift unbalanced segments) follow. Hyperedge
-trees are segment sets, so ordering and nudging handle them like connectors.
+when its cost is at most twice the SPTF frontier, regrowing from the merged sub-route at
+cost zero). Stale bridges after a merge are recognised by recomputing their cost. Port
+directions restrict the separated edges at terminals, and non-terminal leaves are pruned.
+The local improvements of section 3 (moving junctions to merge parallel routes; shifting
+unbalanced segments) are not implemented; nudging centres the tree's segments instead
+(open question). Hyperedge trees are edge sets (`Net`), so ordering and nudging handle
+them like connectors; shape constraints cover branches attached in the middle of a run.
+Tests check connectivity before and after nudging, obstacle avoidance, and the bound by
+the minimum spanning tree of the pairwise shortest routes.
 
 ## Sleeve routing (arXiv 2605.17498)
 
@@ -419,7 +425,7 @@ not available; implemented from secondary descriptions).
 | same | nudging: separation constraints by scan line | checked |
 | same | nudging: VPSC projection to desired positions | alternative (max-gap + midpoint, exact); VPSC open |
 | Marriott, Stuckey, Wybrow, *Seeing Around Corners*, Diagrams 2014 | obstacle-hugging routes, 1-bend visibility graph | checked; lazy edges; not exact in tests, so opt-in, not default |
-| Wybrow, Marriott, Stuckey, *Orthogonal Hyperedge Routing*, Diagrams 2012 | hyperedge Heuristics 1 and 2, local improvement | checked |
+| Wybrow, Marriott, Stuckey, *Orthogonal Hyperedge Routing*, Diagrams 2012 | hyperedge Heuristics 1 and 2 (Fig. 6) | checked; local improvements not built (pruning and nudging instead) |
 | Wybrow, Marriott, Stuckey, *Incremental Connector Routing*, GD 2005 | poly-line visibility graph, invisibility graph, removal pruning | checked |
 | Dwyer, Marriott, Wybrow, *Integrating Edge Routing into Force-Directed Layout*, GD 2006 | exported topology constraints, crossing counting on shared paths | checked (routing parts only) |
 | Wybrow, PhD thesis, 2008 | libavoid background, poly-line cost formula | checked (cost formula) |

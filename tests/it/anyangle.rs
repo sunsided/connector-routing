@@ -166,7 +166,8 @@ proptest! {
             check::polyline(route, &rects).unwrap();
             prop_assert_eq!((route[0], *route.last().unwrap()), (a, b));
             let optimum = f64::from(u32::try_from(oracle(&rects, a, b).unwrap()).unwrap()) / 256.0;
-            prop_assert!(euclid(route) >= optimum - 1e-6 * optimum.max(1.0) - 0.01);
+            // The oracle rounds every edge up by less than 1/256.
+            prop_assert!(euclid(route) >= optimum - 0.05);
         }
     }
 }

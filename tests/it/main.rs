@@ -3,6 +3,7 @@
 mod anyangle;
 mod crossings;
 mod global;
+mod hyperedges;
 mod nudging;
 mod ovg;
 mod pipeline;
