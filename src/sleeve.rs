@@ -109,8 +109,8 @@ impl SleeveRouter {
             return Some(alloc::vec![from, to]);
         }
 
-        let tree = self.dijkstra(self.cdt.vertex(from)?);
-        self.extract(&tree, from, to)
+        let tree = self.dijkstra(&self.exits(self.cdt.vertex(from)?));
+        self.extract(&tree, to)
     }
 
     /// Routes every pair, batching the searches with a greedy vertex cover of the demand
@@ -138,13 +138,13 @@ impl SleeveRouter {
             let Some(v) = self.cdt.vertex(root) else {
                 continue;
             };
-            let tree = self.dijkstra(v);
+            let tree = self.dijkstra(&self.exits(v));
             for i in list {
                 let (a, b) = pairs[i];
                 out[i] = if root == a {
-                    self.extract(&tree, a, b)
+                    self.extract(&tree, b)
                 } else {
-                    self.extract(&tree, b, a).map(|mut r| {
+                    self.extract(&tree, a).map(|mut r| {
                         r.reverse();
                         r
                     })
@@ -161,26 +161,114 @@ impl SleeveRouter {
         self.obstacles.iter().all(|r| separated(a, b, r))
     }
 
-    /// Dijkstra over free triangles from the triangles around vertex `source`. Returns
-    /// per triangle the cost and parent (`NONE` for roots), `u64::MAX` if unreached.
-    fn dijkstra(&self, source: u32) -> Vec<(u64, u32)> {
-        let n = self.cdt.triangles.len();
-        let mut best = alloc::vec![(u64::MAX, NONE); n];
-        let mut heap = BinaryHeap::new();
-        let s = self.cdt.points[source as usize];
-        for t in self.cdt.around(source) {
-            if !self.blocked[t as usize] {
-                let cost = distance(scaled(s), self.centroid3(t));
-                heap.push(Reverse((cost, t, NONE)));
+    /// The ways out of vertex `v` into free space: `v` itself if a free triangle touches
+    /// it, else the nearest vertices with one along *walls*, obstacle sides shared by two
+    /// touching obstacles (a slit without area, which no triangle covers). Each exit
+    /// comes with the path to it from `v` and its scaled length.
+    fn exits(&self, v: u32) -> Vec<Exit> {
+        let free = |u: u32| {
+            self.cdt
+                .around(u)
+                .iter()
+                .any(|&t| !self.blocked[t as usize])
+        };
+        let point = |u: u32| self.cdt.points[u as usize];
+        if free(v) {
+            return alloc::vec![Exit {
+                vertex: v,
+                path: alloc::vec![point(v)],
+                cost: 0
+            }];
+        }
+
+        // Dijkstra along walls.
+        let mut best: BTreeMap<u32, (u64, u32)> = BTreeMap::new();
+        let mut heap = BinaryHeap::from([Reverse((0_u64, v, v))]);
+        let mut exits = Vec::new();
+        while let Some(Reverse((cost, u, parent))) = heap.pop() {
+            if best.contains_key(&u) {
+                continue;
+            }
+
+            best.insert(u, (cost, parent));
+            if free(u) {
+                let mut path = alloc::vec![point(u)];
+                let mut at = u;
+                while at != v {
+                    at = best[&at].1;
+                    path.push(point(at));
+                }
+
+                path.reverse();
+                exits.push(Exit {
+                    vertex: u,
+                    path,
+                    cost,
+                });
+                continue;
+            }
+
+            for w in self.wall_neighbours(u) {
+                if !best.contains_key(&w) {
+                    let step = distance(scaled(point(u)), scaled(point(w)));
+                    heap.push(Reverse((cost.saturating_add(step), w, u)));
+                }
             }
         }
 
-        while let Some(Reverse((cost, t, parent))) = heap.pop() {
+        exits
+    }
+
+    /// The vertices joined to `u` by a wall: a constrained edge between two triangles
+    /// inside obstacles.
+    fn wall_neighbours(&self, u: u32) -> Vec<u32> {
+        let mut out = Vec::new();
+        for t in self.cdt.around(u) {
+            let tri = self.cdt.triangles[t as usize];
+            for k in 0..3 {
+                let (a, b) = (tri.vertices[(k + 1) % 3], tri.vertices[(k + 2) % 3]);
+                let n = tri.neighbors[k];
+                let wall = tri.constrained[k]
+                    && self.blocked[t as usize]
+                    && n != NONE
+                    && self.blocked[n as usize];
+                if wall && (a == u || b == u) {
+                    out.push(if a == u { b } else { a });
+                }
+            }
+        }
+
+        out.sort_unstable();
+        out.dedup();
+
+        out
+    }
+
+    /// Dijkstra over free triangles from the triangles around the `exits`. Returns per
+    /// triangle the cost, the parent (`NONE` for roots) and the exit it grows from;
+    /// `u64::MAX` if unreached.
+    fn dijkstra(&self, exits: &[Exit]) -> Tree {
+        let n = self.cdt.triangles.len();
+        let mut best = alloc::vec![(u64::MAX, NONE, 0_usize); n];
+        let mut heap = BinaryHeap::new();
+        for (e, exit) in exits.iter().enumerate() {
+            let s = self.cdt.points[exit.vertex as usize];
+            for t in self.cdt.around(exit.vertex) {
+                if !self.blocked[t as usize] {
+                    let cost = exit
+                        .cost
+                        .saturating_add(distance(scaled(s), self.centroid3(t)));
+                    heap.push(Reverse((cost, t, NONE, e)));
+                }
+            }
+        }
+
+        while let Some(Reverse((cost, t, parent, root))) = heap.pop() {
             if best[t as usize].0 != u64::MAX {
                 continue;
             }
 
-            best[t as usize] = (cost, parent);
+            best[t as usize] = (cost, parent, root);
             let tri = self.cdt.triangles[t as usize];
             for (k, &next) in tri.neighbors.iter().enumerate() {
                 if next == NONE
@@ -192,35 +280,45 @@ impl SleeveRouter {
                 }
 
                 let step = distance(self.centroid3(t), self.centroid3(next));
-                heap.push(Reverse((cost.saturating_add(step), next, t)));
+                heap.push(Reverse((cost.saturating_add(step), next, t, root)));
             }
         }
 
-        best
+        Tree {
+            best,
+            exits: exits.to_vec(),
+        }
     }
 
-    /// The route from `from` to `to` through the cheapest sleeve of `tree` (a Dijkstra
-    /// tree rooted at `from`).
-    fn extract(&self, tree: &[(u64, u32)], from: Point, to: Point) -> Option<Vec<Point>> {
+    /// The route to `to` through the cheapest sleeve of `tree`, from the tree's exit
+    /// the sleeve grows from.
+    fn extract(&self, tree: &Tree, to: Point) -> Option<Vec<Point>> {
         let target = self.cdt.vertex(to)?;
-        let pt = scaled(to);
-        let end = self
-            .cdt
-            .around(target)
+        let best = &tree.best;
+        let (end, arrival) = self
+            .exits(target)
             .into_iter()
-            .filter(|&t| tree[t as usize].0 != u64::MAX)
-            .min_by_key(|&t| {
-                (
-                    tree[t as usize]
-                        .0
-                        .saturating_add(distance(self.centroid3(t), pt)),
-                    t,
-                )
-            })?;
+            .flat_map(|exit| {
+                let p = scaled(self.cdt.points[exit.vertex as usize]);
+                self.cdt
+                    .around(exit.vertex)
+                    .into_iter()
+                    .filter(|&t| best[t as usize].0 != u64::MAX)
+                    .map(move |t| (t, exit.clone(), p))
+                    .collect::<Vec<_>>()
+            })
+            .min_by_key(|(t, exit, p)| {
+                let total = best[*t as usize]
+                    .0
+                    .saturating_add(distance(self.centroid3(*t), *p))
+                    .saturating_add(exit.cost);
+                (total, *t)
+            })
+            .map(|(t, exit, _)| (t, exit))?;
 
         let mut sleeve = alloc::vec![end];
         while let Some(&last) = sleeve.last() {
-            let parent = tree[last as usize].1;
+            let parent = best[last as usize].1;
             if parent == NONE {
                 break;
             }
@@ -230,8 +328,17 @@ impl SleeveRouter {
 
         sleeve.reverse();
         let portals = self.portals(&sleeve);
+        let departure = &tree.exits[best[end as usize].2];
+        let start = *departure
+            .path
+            .last()
+            .expect("an exit path ends at the exit");
+        let finish = *arrival.path.last().expect("an exit path ends at the exit");
+        let mut route = departure.path.clone();
+        route.extend(funnel::funnel(start, finish, &portals).into_iter().skip(1));
+        route.extend(arrival.path.iter().rev().skip(1));
 
-        Some(funnel::funnel(from, to, &portals))
+        Some(route)
     }
 
     /// The `(left, right)` portals between consecutive triangles of a sleeve.
@@ -263,6 +370,26 @@ impl SleeveRouter {
             i64::from(a.y) + i64::from(b.y) + i64::from(c.y),
         )
     }
+}
+
+/// A way from an endpoint into free space.
+#[derive(Debug, Clone)]
+struct Exit {
+    /// The first vertex with a free triangle around it.
+    vertex: u32,
+    /// The path from the endpoint to that vertex along walls (just the endpoint if it
+    /// touches free space itself).
+    path: Vec<Point>,
+    /// The scaled length of the path.
+    cost: u64,
+}
+
+/// A Dijkstra tree over triangles.
+struct Tree {
+    /// Per triangle: cost, parent (`NONE` for roots), index of the exit it grows from.
+    best: Vec<(u64, u32, usize)>,
+    /// The exits the tree grows from.
+    exits: Vec<Exit>,
 }
 
 /// Three times `p`, in the units of [`SleeveRouter::centroid3`].

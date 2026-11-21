@@ -160,12 +160,10 @@ proptest! {
         let endpoints: Vec<Point> = pairs.iter().flat_map(|&(a, b)| [a, b]).collect();
         let router = SleeveRouter::new(&rects, &endpoints, 5).unwrap();
         let batched = router.route_all(&pairs);
-        // An endpoint on a wall shared by two touching boxes is out of reach (see
-        // `sleeve_cannot_reach_a_shared_wall`); so is one walled in.
-        let on_shared_wall = |p: Point| rects.iter().filter(|r| r.boundary_contains(p)).count() >= 2;
+        // Only a walled-in endpoint is out of reach.
         for (&(a, b), route) in pairs.iter().zip(&batched) {
             let Some(route) = route.as_ref() else {
-                prop_assert!(on_shared_wall(a) || on_shared_wall(b) || oracle(&rects, a, b).is_none());
+                prop_assert!(oracle(&rects, a, b).is_none());
                 continue;
             };
             check::polyline(route, &rects).unwrap();
@@ -177,15 +175,21 @@ proptest! {
     }
 }
 
-/// A limit of sleeve routing: an endpoint on a wall shared by two touching boxes has no
-/// free triangle around it (the slit has no area), so no sleeve reaches it. Poly-line
-/// routing runs along the slit instead.
+/// An endpoint on a wall shared by two touching boxes has no free triangle around it
+/// (the slit has no area): sleeve routing leaves along the wall to its nearest end, as
+/// poly-line routing does.
 #[test]
-fn sleeve_cannot_reach_a_shared_wall() {
+fn sleeve_reaches_a_shared_wall() {
     let rects = [Rect::new(0, 0, 10, 10), Rect::new(10, 0, 20, 10)];
-    let (inside, outside) = (Point::new(10, 5), Point::new(30, 5));
+    let (inside, outside) = (Point::new(10, 4), Point::new(30, 5));
     let router = SleeveRouter::new(&rects, &[inside, outside], 5).unwrap();
-    assert_eq!(router.route(outside, inside), None);
+    let route = router.route(outside, inside).unwrap();
+    check::polyline(&route, &rects).unwrap();
+    assert_eq!((route[0], *route.last().unwrap()), (outside, inside));
+    assert!(
+        route.contains(&Point::new(10, 0)),
+        "leaves the slit at its lower end: {route:?}"
+    );
 
     let mut polyline = PolylineRouter::new(Config::default());
     for r in rects {

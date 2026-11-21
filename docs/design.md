@@ -402,8 +402,13 @@ roots), skipping every triangle inside an obstacle, and the funnel algorithm (Le
 Preparata; not checked against an original) pulls the path taut through the sleeve. Per
 the paper, routes are batched by a greedy vertex cover of the demand graph (one Dijkstra
 tree per cover vertex) and a straight segment is tried first. The paper's vertex collapse
-is not needed: it fixes detours of routes that start at node centres inside padded
-obstacles, while our endpoints lie on obstacle boundaries. Obstacle interiors must not
+fixes detours of routes that start at node centres inside padded obstacles; our endpoints
+lie on obstacle boundaries, where it does not apply. What does apply is its idea of
+letting the route leave along the obstacle: an endpoint on a wall shared by two touching
+obstacles touches no free triangle (the slit has no area), so the router first walks
+along such walls (constrained edges between two blocked triangles) to the nearest
+vertices that touch free space, seeds the search there and prepends the walk; the target
+side likewise. Obstacle interiors must not
 overlap (touching is fine); a failed constraint recovery is an error, not a silent gap.
 Shortcut: constraint recovery scans all triangles per flip (`O(T)`), fine for hundreds of
 obstacles.
@@ -450,7 +455,7 @@ not available; implemented from secondary descriptions).
 | Wybrow, PhD thesis, 2008 | libavoid background, poly-line cost formula | checked (cost formula) |
 | Hegemann, Wolff, *A Simple Pipeline for Orthogonal Graph Drawing*, arXiv 2309.01671 | port assignment, crossing reduction, nudging LP, fixed look directions | checked; LP replaced by exact max-gap; channel graph not built; fixed look directions replaced (regression test) |
 | Gladisch et al., *Orthogonal Edge Routing for the EditLens*, arXiv 1612.05064 | incremental OVG update rules | checked; applied to the Wybrow OVG |
-| Nachmanson, Chen, *Browsing Large Graphs with Tile Pyramids and Sleeve Routing in the Browser*, arXiv 2605.17498 | sleeve routing, vertex cover batching, straight-line first | checked; vertex collapse not needed (boundary endpoints) |
+| Nachmanson, Chen, *Browsing Large Graphs with Tile Pyramids and Sleeve Routing in the Browser*, arXiv 2605.17498 | sleeve routing, vertex cover batching, straight-line first | checked; vertex collapse replaced by wall exits for endpoints in slits |
 | McMurchie, Ebeling, *PathFinder*, FPGA 1995 | negotiated congestion | not checked |
 | Pupyrev et al., metro-line crossing minimisation | path order comparator | not checked (via 2309.01671) |
 | Dwyer, Marriott, Stuckey, VPSC / *Fast node overlap removal*, GD 2005 | scan-line constraint generation | not checked (via Wybrow 2009) |
@@ -500,6 +505,6 @@ README's status list.
   for sleeve routing (the CDT needs non-crossing constraints).
 - **Not built:** the channel routing graph of 2309.01671, its full nudging mode (box
   growth), the poly-line angle penalty and hidden-region
-  pruning, sleeve vertex collapse and edge hints.
+  pruning, sleeve vertex collapse (replaced by wall exits) and edge hints.
 - **Publishing.** `heuristic-search` and `multiobjective-search` are path dependencies
   with a version and must be published first.
