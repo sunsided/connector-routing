@@ -341,7 +341,8 @@ fn pass_objects(
     axis: Axis,
     extra: &[(usize, usize)],
 ) -> Vec<Object> {
-    let required = segments.terminal_arcs(nets, axis);
+    let mut required = segments.terminal_arcs(nets, axis);
+    required.extend(fixed_side_arcs(graph, obstacles, nets, segments, axis));
     let ranks = order::line_ranks(graph, nets, segments, axis, &required, extra);
     let mut objects = constraints::obstacle_objects(obstacles, axis.other());
     for (id, s) in segments.list.iter().enumerate() {
@@ -356,6 +357,55 @@ fn pass_objects(
     }
 
     objects
+}
+
+/// The arcs that put a movable segment on the free side of a fixed segment on its line
+/// when an obstacle blocks the other side: the order is then forced by geometry.
+fn fixed_side_arcs(
+    graph: &RoutingGraph,
+    obstacles: &[Rect],
+    nets: &[Net],
+    segments: &Segments,
+    axis: Axis,
+) -> Vec<(usize, usize)> {
+    let across = axis.other();
+    let mut by_line: BTreeMap<i32, Vec<usize>> = BTreeMap::new();
+    for (id, s) in segments.list.iter().enumerate() {
+        if s.axis == axis && s.vertices.len() > 1 {
+            by_line.entry(segments.line[id]).or_default().push(id);
+        }
+    }
+
+    let mut arcs = Vec::new();
+    for (&line, members) in &by_line {
+        for &m in members.iter().filter(|&&m| !segments.list[m].fixed) {
+            let (lo, hi) = segments.extent(graph, nets, m);
+            // Which sides of the line an obstacle blocks along this segment.
+            let blocked = |high_side: bool| {
+                obstacles.iter().any(|r| {
+                    let (a, b) = r.range(across);
+                    let (c, d) = r.range(axis);
+                    let touches = if high_side { a == line } else { b == line };
+                    touches && c < hi && lo < d
+                })
+            };
+            let (low_blocked, high_blocked) = (blocked(false), blocked(true));
+            if low_blocked == high_blocked {
+                continue;
+            }
+
+            for &f in members.iter().filter(|&&f| {
+                segments.list[f].fixed && segments.list[f].net != segments.list[m].net
+            }) {
+                let (flo, fhi) = segments.extent(graph, nets, f);
+                if flo.max(lo) < fhi.min(hi) {
+                    arcs.push(if high_blocked { (m, f) } else { (f, m) });
+                }
+            }
+        }
+    }
+
+    arcs
 }
 
 /// One pass: moves the segments along `axis` across it. Returns the smallest achieved

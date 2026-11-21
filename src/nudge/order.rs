@@ -1,15 +1,15 @@
 //! The order of nets across shared edges, and from it the order of segments on each
 //! line.
 //!
-//! Following the orthogonal variant of Pupyrev et al. in arXiv 2309.01671, every
-//! horizontal edge looks to the left and every vertical edge looks down: two nets on an
-//! edge are compared by walking both from the edge in that direction while they take
-//! the same edges. At the first divergence, the net that turns more to the left of the
-//! walking direction lies on the left side. A net that ends ranks between a left turn
-//! and going straight; a net that branches is followed along its leftmost branch. Ties
-//! (identical walks) are broken by the walk in the other direction, then by net index.
-//! Every walk is a sequence of ranked choices, so this is a total order on each edge,
-//! and it agrees on every edge of a shared straight stretch.
+//! Every shared edge gets a pseudo direction (Wybrow et al. 2009, section 5.1) so that
+//! each net runs through its shared stretches head to tail. Two nets on an edge are
+//! compared by walking both from the edge towards its pseudo entry while they take the
+//! same edges; at the first divergence, the net that turns more to the left of the
+//! walking direction lies on the left side. A walk that reaches a net's end is
+//! inconclusive and the walk towards the exit decides; a net that branches is followed
+//! along its leftmost branch; identical walks fall back to net index. Every walk is a
+//! sequence of ranked choices, so this is a total order on each edge, and all edges of a
+//! shared stretch, bends included, walk to the same end and agree.
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
@@ -74,16 +74,22 @@ fn walk(
     None
 }
 
+/// A walk comparison from one end of an edge, strict or not.
+type Walk<'a> = dyn Fn(bool) -> Option<Ordering> + 'a;
+
 /// The order of nets `a` and `b` (by index `ia`, `ib`) across the edge from `low` to
 /// `high`, in increasing coordinate across the edge: `Less` means `a` is below `b` on a
-/// horizontal edge, left of `b` on a vertical one.
+/// horizontal edge, left of `b` on a vertical one. The flag is set when the order is
+/// soft: both ends decide it and disagree, so the pair crosses once whichever order
+/// the line takes.
 pub(crate) fn compare_on_edge(
     graph: &RoutingGraph,
     nets: &[Net],
     (ia, ib): (usize, usize),
     (low, high): (VertexId, VertexId),
     axis: Axis,
-) -> Ordering {
+    entry_is_low: bool,
+) -> (Ordering, bool) {
     let (a, b) = (&nets[ia], &nets[ib]);
     let (look, back) = match axis {
         Axis::X => (Direction::Left, Direction::Right),
@@ -98,11 +104,94 @@ pub(crate) fn compare_on_edge(
         walk(graph, a, b, high, back, strict).map(|o| if axis == Axis::X { o.reverse() } else { o })
     };
 
-    first(true)
-        .or_else(|| second(true))
+    // When both ends decide and disagree, the pair crosses once in either order: the
+    // order is soft and may give way to the others on the line.
+    let (first, second): (&Walk<'_>, &Walk<'_>) = if entry_is_low {
+        (&first, &second)
+    } else {
+        (&second, &first)
+    };
+    let (strict_first, strict_second) = (first(true), second(true));
+    let soft = matches!((strict_first, strict_second), (Some(x), Some(y)) if x != y);
+    let order = strict_first
+        .or(strict_second)
         .or_else(|| first(false))
         .or_else(|| second(false))
-        .unwrap_or_else(|| ia.cmp(&ib))
+        .unwrap_or_else(|| ia.cmp(&ib));
+
+    (order, soft)
+}
+
+/// Pseudo directions of the shared edges (Wybrow et al. 2009, section 5.1): every edge
+/// used by two or more nets gets a direction such that each net runs through a
+/// connected stretch of shared edges head to tail. Keyed by `(low vertex, Right or Up)`;
+/// `true` means the pseudo direction runs from the low end to the high end, so the low
+/// end is where nets enter the edge.
+///
+/// Every shared edge then compares nets by walking towards the entry, so all edges of a
+/// shared stretch, bends included, agree on the order and a necessary crossing happens
+/// once, at the exit. Where a net would force a conflicting direction (the paper's split
+/// point), the first assignment stays.
+fn pseudo_directions(graph: &RoutingGraph, nets: &[Net]) -> BTreeMap<(VertexId, Direction), bool> {
+    let mut users: BTreeMap<(VertexId, Direction), Vec<usize>> = BTreeMap::new();
+    for (index, net) in nets.iter().enumerate() {
+        for edge in net.edges() {
+            users.entry(edge).or_default().push(index);
+        }
+    }
+
+    users.retain(|_, list| list.len() >= 2);
+    let mut pseudo: BTreeMap<(VertexId, Direction), bool> = BTreeMap::new();
+    for &start in users.keys() {
+        if pseudo.contains_key(&start) {
+            continue;
+        }
+
+        pseudo.insert(start, true);
+        let mut queue = alloc::vec![start];
+        while let Some((low, forward)) = queue.pop() {
+            let high = graph.neighbor(low, forward).expect("a used edge exists");
+            let (tail, head, heading) = if pseudo[&(low, forward)] {
+                (low, high, forward)
+            } else {
+                (high, low, forward.reverse())
+            };
+            for &n in &users[&(low, forward)] {
+                // Continue at the head away from the edge, and back from the tail.
+                for (at, dirs_from, outward) in
+                    [(head, heading.reverse(), true), (tail, heading, false)]
+                {
+                    for d in nets[n].arms_at(at).iter().filter(|&d| d != dirs_from) {
+                        let key = edge_key(graph, at, d);
+                        if !users.contains_key(&key) || pseudo.contains_key(&key) {
+                            continue;
+                        }
+
+                        // Outward from the head: the edge points away from `at`.
+                        let away_is_forward = d.is_positive();
+                        let from_low = if outward {
+                            away_is_forward
+                        } else {
+                            !away_is_forward
+                        };
+                        pseudo.insert(key, from_low);
+                        queue.push(key);
+                    }
+                }
+            }
+        }
+    }
+
+    pseudo
+}
+
+/// The key `(low vertex, Right or Up)` of the edge leaving `at` in direction `d`.
+fn edge_key(graph: &RoutingGraph, at: VertexId, d: Direction) -> (VertexId, Direction) {
+    if d.is_positive() {
+        (at, d)
+    } else {
+        (graph.neighbor(at, d).expect("a net edge"), d.reverse())
+    }
 }
 
 /// For every graph edge along `axis` used by at least two nets, the nets using it.
@@ -128,8 +217,8 @@ fn edge_users(nets: &[Net], axis: Axis) -> BTreeMap<VertexId, Vec<usize>> {
 
 /// The rank of every segment along `axis` among the segments on its line: a
 /// topological order of the per-edge orders, the `required` arcs and the `extra` arcs,
-/// ties by low end and id. If the extra arcs create a cycle they are dropped for that
-/// line.
+/// ties by low end and id. On a cycle the extra arcs are dropped first, then the soft
+/// orders (pairs that cross once in either order), and only then is a cycle broken.
 pub(crate) fn line_ranks(
     graph: &RoutingGraph,
     nets: &[Net],
@@ -144,17 +233,23 @@ pub(crate) fn line_ranks(
     };
     // The pairwise order on every shared edge. Pairs on one straight stretch compare
     // the same on all its edges.
+    let pseudo = pseudo_directions(graph, nets);
     let mut arcs = BTreeSet::new();
+    let mut soft = BTreeSet::new();
     for (low, users) in edge_users(nets, axis) {
         let high = graph.neighbor(low, forward).expect("a used edge exists");
         for (i, &a) in users.iter().enumerate() {
             for &b in &users[i + 1..] {
                 let sa = segments.of_edge(graph, a, low, forward).expect("net edge");
                 let sb = segments.of_edge(graph, b, low, forward).expect("net edge");
-                if compare_on_edge(graph, nets, (a, b), (low, high), axis).is_lt() {
-                    arcs.insert((sa, sb));
+                let entry_is_low = pseudo.get(&(low, forward)).copied().unwrap_or(true);
+                let (order, is_soft) =
+                    compare_on_edge(graph, nets, (a, b), (low, high), axis, entry_is_low);
+                let arc = if order.is_lt() { (sa, sb) } else { (sb, sa) };
+                if is_soft {
+                    soft.insert(arc);
                 } else {
-                    arcs.insert((sb, sa));
+                    arcs.insert(arc);
                 }
             }
         }
@@ -169,9 +264,14 @@ pub(crate) fn line_ranks(
     }
 
     let mut ranks = alloc::vec![0; segments.list.len()];
+    // Try everything, then without the kiss arcs, then without the soft orders.
+    let all: BTreeSet<(usize, usize)> = arcs.iter().chain(&soft).chain(extra).copied().collect();
+    let with_soft: BTreeSet<(usize, usize)> = arcs.iter().chain(&soft).copied().collect();
+    let with_extra: BTreeSet<(usize, usize)> = arcs.iter().chain(extra).copied().collect();
     for members in lines.values() {
-        let with_extra: BTreeSet<(usize, usize)> = arcs.iter().chain(extra).copied().collect();
-        let order = topological(graph, segments, members, &with_extra)
+        let order = topological(graph, segments, members, &all)
+            .or_else(|| topological(graph, segments, members, &with_soft))
+            .or_else(|| topological(graph, segments, members, &with_extra))
             .or_else(|| topological(graph, segments, members, &arcs))
             .unwrap_or_else(|| breaking_cycles(graph, segments, members, &arcs));
         for (rank, &id) in order.iter().enumerate() {

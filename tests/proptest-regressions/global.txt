@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 5baccd21b67ec5eafae9165688e52a6fcc365480ac05a8da8fcacd55db82236c # shrinks to rects = [Rect { min: Point { x: 13, y: 9 }, max: Point { x: 18, y: 28 } }, Rect { min: Point { x: 21, y: 15 }, max: Point { x: 22, y: 28 } }, Rect { min: Point { x: 5, y: 25 }, max: Point { x: 22, y: 26 } }, Rect { min: Point { x: 5, y: 14 }, max: Point { x: 22, y: 16 } }], pairs = [((18, 16), (0, 0))]

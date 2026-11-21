@@ -105,7 +105,12 @@ proptest! {
             connectors.push(Connector { source, target });
         }
 
-        let routing = route_all(&scene, &connectors, &Config::default()).unwrap();
+        // A port walled in by obstacles has no route; that is the only error expected.
+        let routing = match route_all(&scene, &connectors, &Config::default()) {
+            Ok(routing) => routing,
+            Err(connector_routing::Error::NoRoute { .. }) => return Ok(()),
+            Err(e) => panic!("{e}"),
+        };
         for (c, r) in connectors.iter().zip(&routing.routes) {
             check::orthogonal(&r.points, &rects).unwrap();
             prop_assert_eq!(r.points.first(), Some(&scene.port(c.source).unwrap().point));

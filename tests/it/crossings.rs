@@ -108,3 +108,29 @@ fn necessary_crossing_happens_once() {
     assert_eq!(u32::try_from(geometric).unwrap(), required);
     assert!(required <= 1);
 }
+
+/// Regression for the fixed look directions of arXiv 2309.01671: two routes share an
+/// L-shaped stretch whose ends disagree. Horizontal edges looking left and vertical edges
+/// looking down decide the two legs from different ends, which flips the order at the
+/// shared corner: three crossings instead of one. Pseudo directions (Wybrow et al. 2009)
+/// make both legs look towards the same end.
+#[test]
+fn shared_corner_crosses_once() {
+    let ports = [(8, 32), (48, 4), (4, 36), (16, 8)].map(|(x, y)| Port::free(Point::new(x, y)));
+    let scene = Scene::build([], ports).unwrap();
+    let g = scene.graph();
+    let a = Route::from_vertices(g, path(g, &[(8, 32), (4, 32), (4, 4), (48, 4)]), 0);
+    let b = Route::from_vertices(g, path(g, &[(4, 36), (4, 4), (16, 4), (16, 8)]), 0);
+    let routes = [a, b];
+    assert_eq!(crossing::total_crossings(g, &routes), 1);
+    let config = nudge::Config {
+        separation: 1,
+        max_separation: 2,
+    };
+    let nudged = nudge::nudge(g, &[], &routes, &config);
+    assert_eq!(nudged.overlaps, 0);
+    assert_eq!(
+        check::orthogonal_crossings(&nudged.routes[0], &nudged.routes[1]),
+        1
+    );
+}
