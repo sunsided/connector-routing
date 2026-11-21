@@ -21,22 +21,6 @@ needs before it can be merged.
 4. Install the git hooks with [prek](https://prek.j178.dev/) (`prek install`), or with
    `pre-commit install`. Fast checks run on commit; clippy and tests run on push.
 
-### Sibling crates
-
-`heuristic-search` and `multiobjective-search` are not released yet (crates.io only has
-0.0.0 placeholders), so `Cargo.toml` depends on them by path: check out
-[heuristic-search](https://github.com/sunsided/heuristic-search) and
-[multiobjective-search](https://github.com/sunsided/multiobjective-search) next to this
-repository, as `../heuristic-search` and `../multiobjective-search`. Both are private. CI
-does the same (`.github/actions/checkout-siblings`, with the `SIBLING_REPOS_TOKEN` secret).
-`multiobjective-search` is optional (feature `multi-objective`), but every `task` command
-uses `--all-features`.
-
-Inside the planning hub directory, the untracked `../.cargo/config.toml` patches the
-released sibling crates (`[patch.crates-io]`) to their working trees, so local builds use
-local changes. CI and Dependabot never see that file and resolve from crates.io. The patch
-rewrites `Cargo.lock` on every build, which is why no lock file is tracked.
-
 ## Everyday commands
 
 | Command | What it does |
@@ -104,12 +88,6 @@ Releases are handled by [release-plz](https://release-plz.dev/). Every merge to
 GitHub Releases. The `vX.Y.Z` tag then triggers `publish-crates-io.yml`, which
 publishes the crate to crates.io via trusted publishing from the protected `crates-io`
 environment.
-
-Release automation is dormant for now. The release-plz jobs run only once the repository
-variable `RELEASE_APP_CLIENT_ID` (and the secret `RELEASE_APP_PRIVATE_KEY`) of the release
-GitHub App are set; setting them activates releases. The first real release also needs
-`heuristic-search` and `multiobjective-search` on crates.io, because `cargo publish` verifies against the registry
-version of every dependency.
 
 ## License
 

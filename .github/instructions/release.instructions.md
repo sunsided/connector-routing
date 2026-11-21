@@ -16,10 +16,6 @@ applyTo: "**/Cargo.toml,release-plz.toml,.github/workflows/release-plz.yml,.gith
   unknown-registry sources. Runtime dependencies are only `heuristic-search` and the
   optional `multiobjective-search`; the crate stays `no_std`. Adding one needs a reason in
   the PR.
-- `heuristic-search` and `multiobjective-search` are `path` + `version` dependencies until
-  they have real crates.io releases. Until then `cargo publish` cannot verify this crate,
-  and Dependabot's Cargo updates fail. Once one is released, drop its `path` and its
-  sibling checkout in CI.
 - `rust-version` is a signal, not a contract. Raising it is allowed when a dependency or a
   feature benefits. It needs a minor release and a changelog note, never a patch release.
 - release-plz runs in git-only mode: it tags and creates GitHub Releases. `publish-crates-io.yml`

@@ -16,5 +16,5 @@ applyTo: "**/*.md,docs/**"
   with the crate-level example.
 - `docs/design.md` records the models, the deviations from the papers that testing found,
   and the paper table. Update it when a router, objective or nudging model is added or
-  changes shape, and keep the README "Scope and status" list in step.
+  changes shape, and keep the README "Scope" list in step.
 - Keep badges, the License section and the MSRV statement consistent with `Cargo.toml`.

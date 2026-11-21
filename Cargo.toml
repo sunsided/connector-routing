@@ -1,6 +1,6 @@
 [package]
 name = "connector-routing"
-description = "Global connector routing: many orthogonal connectors at once with bend, length and crossing costs, negotiated congestion and rip-up and reroute"
+description = "Connector routing for diagrams and schematics: many orthogonal connectors at once with bend, length and crossing costs, negotiated congestion, rip-up and reroute, and nudging"
 version = "0.0.0"
 edition = "2024"
 rust-version = "1.86"
@@ -8,8 +8,8 @@ authors = ["Markus Mayer <widemeadows@gmail.com>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/sunsided/connector-routing"
 readme = "README.md"
-keywords = ["routing", "orthogonal", "pathfinding", "diagram", "planning"]
-categories = ["algorithms", "graphics", "no-std"]
+keywords = ["connector", "routing", "orthogonal", "diagram", "edge-routing"]
+categories = ["algorithms", "graphics", "visualization", "no-std"]
 # Repository tooling stays out of the published crate.
 exclude = [
     ".github/",

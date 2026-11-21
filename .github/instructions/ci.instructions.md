@@ -27,18 +27,8 @@ applyTo: ".github/workflows/**,Taskfile.dist.yaml,**/Taskfile.dist.yaml,.pre-com
 - `no-std` mirrors `task build:no-std`: the library for `thumbv7em-none-eabihf`, with
   default features and with `--all-features`. The crate is `no_std` plus `alloc`; do not
   drop either build.
-- `heuristic-search` and `multiobjective-search` (optional, feature `multi-objective`) are
-  unreleased path dependencies. Every job that runs cargo checks this repository out into
-  `connector-routing/` and runs `./connector-routing/.github/actions/checkout-siblings`,
-  which checks out both private siblings next to it with the `SIBLING_REPOS_TOKEN` secret.
-  Such jobs set `defaults.run.working-directory`, and paths in action inputs
-  (`manifest-path`, `workspaces`, `working-directory`, `RUSTDOCFLAGS`) include the
-  `connector-routing/` prefix. Remove a sibling from the action once its dependency moves
-  to a crates.io release, and drop the action and the layout when none is left.
 - zizmor's `self-repository` audit is disabled in `.github/zizmor.yml`: actionlint does not
   accept the `$/` form yet. Re-enable it once actionlint does.
-- `cargo fmt` runs without `--all`, here and in `fuzz/`: `--all` also formats path
-  dependencies and would rewrite the sibling checkouts.
 - `msrv` checks the library only (`cargo hack check --rust-version`, no `--all-targets`):
   dev-dependencies may need a newer Rust. Do not add `--all-targets` back. It checks with
   `--all-features`, so `multi-objective` (multiobjective-search) is covered as well.
@@ -46,9 +36,7 @@ applyTo: ".github/workflows/**,Taskfile.dist.yaml,**/Taskfile.dist.yaml,.pre-com
   `pipeline_draw`, `hyperedge_tree` and `polyline_route`). Its
   tasks live in `fuzz/Taskfile.dist.yaml`, included as `fuzz:`; CI's `fuzz` job mirrors
   `task fuzz:build` and `task fuzz:lint`.
-- No `Cargo.lock` is tracked (root or `fuzz/`): this is a library, and local builds in the
-  planning hub patch published siblings to their working trees (the hub's
-  `.cargo/config.toml`), which rewrites the lock on every build. CI resolves fresh from
+- No `Cargo.lock` is tracked (root or `fuzz/`): this is a library. CI resolves fresh from
   crates.io, and no step uses `--locked`.
 - `scripts/check-branch.sh` is the single definition of allowed branch names. It is used by
   the Taskfile, the hook and the CI `branch` job.

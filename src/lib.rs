@@ -79,10 +79,6 @@
 //! See `docs/design.md` for the models, the deviations from the papers found by
 //! testing, and the paper table.
 //!
-//! ## Status
-//!
-//! Pre-release; the API will change.
-//!
 //! Repository: <https://github.com/sunsided/connector-routing>
 
 #![no_std]

@@ -32,7 +32,7 @@ applyTo: "**/*.rs"
   or `check::polyline`.
 - Optimality claims are tested against brute force (`tests/it/support.rs`). A change that
   makes a search inexact must say so in its docs and in `docs/design.md`.
-- Public API changes go with a matching update to the README "Scope and status" list and
+- Public API changes go with a matching update to the README "Scope" list and
   `docs/design.md`.
 - Mermaid diagrams in doc comments must match the code they describe. Update them when the
   structure changes.

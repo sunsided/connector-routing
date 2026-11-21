@@ -135,8 +135,7 @@ or "not moved yet" at the source. Moves never reverse. A move costs
 expands only along its port's directions; the goal is the target vertex reached with a
 heading opposite to one of the target port's directions.
 
-The search runs on `heuristic_search::a_star` (a path dependency on the sibling crate,
-used read-only). The heuristic is `length_weight * manhattan + bend_penalty * b`, where
+The search runs on `heuristic_search::a_star`. The heuristic is `length_weight * manhattan + bend_penalty * b`, where
 `b` is the exact minimum number of bends from `(p, heading)` to the target with a valid
 arrival heading in the obstacle-free plane. This is a shortest-path distance in a
 relaxation, hence consistent. It differs from the paper's `s_d` table (checked against
@@ -480,8 +479,7 @@ continuations through a node are not bends (the thesis' `s = 0` for `a = 0`).
 ## Multi-objective (feature `multi-objective`)
 
 For one connector, with the other routes fixed, the Pareto front over
-`[length, bends, crossings]` via NAMOA*dr from `multiobjective-search` (path dependency,
-read-only), over the same `(vertex, heading)` state graph.
+`[length, bends, crossings]` via NAMOA*dr from `multiobjective-search`, over the same `(vertex, heading)` state graph.
 
 ## Papers
 
@@ -511,26 +509,6 @@ not available; implemented from secondary descriptions).
 | Lee and Preparata; Chazelle (funnel algorithm) | funnel | not checked |
 | Lawson; Sloan (Delaunay flips, constraint recovery) | CDT | not checked |
 | Long, Zhou, Memik, EBOARST (SPTF/MTST) | hyperedge Heuristic 1 | not checked (via Wybrow 2012) |
-
-## Milestones
-
-1. Geometry, routing graph, OVG, incremental OVG, independent route checker.
-2. Single connector: OVG A* with exact bend estimate, lexicographic objectives, brute-force
-   oracle; 1-bend visibility graph search (Marriott 2014), default if exact.
-3. Global routing: resources and capacities, PathFinder, crossing penalty, deterministic
-   order, invalidation reports for scene mutations (Wybrow 2005, Dwyer 2006).
-4. Post-processing: path ordering, crossing count and reduction, constraint generation,
-   exact difference-constraint nudging.
-5. Pipeline per arXiv 2309.01671: port assignment, OVG or channel routing graph, full
-   run, constrained or full nudging.
-6. Hyperedges (Wybrow 2012): separated OVG, Heuristics 1 and 2, local improvement.
-7. Sleeve routing: exact CDT, dual Dijkstra, funnel, vertex cover batching.
-8. Poly-line routing (Wybrow 2005): visibility and invisibility graphs, incremental
-   updates, removal pruning.
-9. Multi-objective Pareto routing behind `multi-objective`.
-
-All nine milestones are implemented except the parts named "not built" above and in the
-README's status list.
 
 ## Open questions (with the defaults taken)
 
@@ -562,5 +540,3 @@ README's status list.
   edge hints between zoom levels.
 - **Full nudging objective.** Leftmost (compact) solution instead of the paper's
   weighted LP. Default: off; constrained nudging is the default.
-- **Publishing.** `heuristic-search` and `multiobjective-search` are path dependencies
-  with a version and must be published first.
