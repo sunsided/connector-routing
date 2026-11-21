@@ -481,6 +481,12 @@ impl PolylineRouter {
     /// A* over the visibility graph from `source` to `target`, with crossing costs
     /// against the other committed routes.
     fn search(&self, id: ConnectorId, source: Point, target: Point) -> Option<(Vec<Point>, u64)> {
+        // An obstacle added after the connector may cover an endpoint; then no route is
+        // valid, not even the single point of a connector from a point to itself.
+        if self.inside(source) || self.inside(target) {
+            return None;
+        }
+
         let others: Vec<(Point, Point)> = self
             .connector_ids()
             .filter(|&c| c != id)

@@ -258,3 +258,20 @@ fn angle_classes() {
     assert_eq!(len0, 4);
     assert!(cost1 > cost0, "bends cost extra: {cost0} {cost1}");
 }
+
+/// An obstacle added over a connector's endpoint leaves it without a route, even for a
+/// connector from a point to itself (found by the `polyline_route` fuzz target).
+#[test]
+fn polyline_endpoint_covered_later_has_no_route() {
+    let mut router = PolylineRouter::new(Config::default());
+    let p = Point::new(5, 5);
+    let point = router.add_connector(p, p).unwrap();
+    let line = router.add_connector(p, Point::new(20, 5)).unwrap();
+    assert_eq!(router.route(point), Some(&[p][..]));
+
+    router.add_obstacle(Rect::new(0, 0, 10, 10)).unwrap();
+    for id in [point, line] {
+        assert!(!router.reroute(id));
+        assert_eq!(router.route(id), None);
+    }
+}
