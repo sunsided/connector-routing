@@ -25,9 +25,8 @@ exclude = [
 ]
 
 [dependencies]
-# Single-connector A*. Path dependency on the sibling draft; must become a crates.io
-# version before this crate is published (see docs/design.md).
-heuristic-search = { path = "../heuristic-search", version = "0.0.0" }
+# Single-connector A*.
+heuristic-search = "0.1"
 # Pareto-optimal single-connector routes (NAMOA*dr). Path dependency on the sibling draft.
 multiobjective-search = { path = "../multiobjective-search", version = "0.0.0", optional = true }
 

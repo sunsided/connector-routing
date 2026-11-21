@@ -1,7 +1,7 @@
 # Keep in sync with `task ci` in the Taskfile. Job `name:`s are the required status checks.
 # Actions are pinned to commit SHAs (tag in the comment); Dependabot updates them.
-# Building jobs check this repository out into connector-routing/, then the unreleased siblings
-# heuristic-search and multiobjective-search (path dependencies) next to it through
+# Building jobs check this repository out into connector-routing/, then the unreleased sibling
+# multiobjective-search (path dependency) next to it through
 # ./connector-routing/.github/actions/checkout-siblings.
 name: CI
 

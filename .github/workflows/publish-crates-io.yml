@@ -2,9 +2,9 @@
 # Runs in the `crates-io` environment, which only allows v*.*.* tags.
 # crates.io trusted publishing is bound to this file name and environment: do not rename either.
 # Actions are pinned to commit SHAs (tag in the comment); Dependabot updates them.
-# Jobs check this repository out into connector-routing/ and the unreleased path dependencies
-# heuristic-search and multiobjective-search next to it. `cargo publish` fails until both have
-# real crates.io releases: it verifies against the registry version of every dependency.
+# Jobs check this repository out into connector-routing/ and the unreleased path dependency
+# multiobjective-search next to it. `cargo publish` fails until it has a
+# real crates.io release: it verifies against the registry version of every dependency.
 name: Publish
 
 on:
