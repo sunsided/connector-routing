@@ -254,6 +254,14 @@ order on each edge, consistent along straight shared stretches, so order changes
 hence crossings, only happen at the ends of shared stretches or at shared corners, where
 they need no extra bends.
 
+A net that ends at a port does not say on which side another must pass, so a walk
+that reaches an end is inconclusive and the walk in the other direction decides; only if
+both are inconclusive does the end rank between a left turn and going straight. With a
+port inside a shared stretch, these pairwise orders can be intransitive (three nets
+whose orders come from different ends); the line order then breaks the cycle
+deterministically, which can cost a crossing. Tests assert exact crossings only for
+instances without such ports.
+
 This is a deliberate alternative to the paper's pseudo-direction method with split points
 and the `L ++ S ++ R` insertion. It gives the same guarantees the paper proves for path
 consistent shared-edge graphs (Theorem 3: minimal crossings, only at the ends of shared
@@ -283,6 +291,19 @@ open interior. Constraint generation is a public step that returns the constrain
 data (Dwyer et al. 2006), so a layout engine can move nodes without changing the routing
 topology.
 
+Three kinds of constraints beyond the papers' turned out necessary in testing:
+
+- **Shape constraints.** A segment stays on its side of the far end of each
+  perpendicular segment it bends into (gap zero), so no segment reverses. Without them a
+  component bounded only by the region walls drifts far out and flips its neighbours.
+- **Terminal points.** A port whose route arrives perpendicular to the pass is a fixed
+  point object on its line; another net's segment through it is ordered opposite to the
+  route's arm there, so it cannot cross the route's last segment.
+- **Kisses.** Two routes that turn away from each other at a shared vertex (`┌` meets
+  `┘`) cross after nudging exactly when the first pass puts one's vertical on the
+  other's horizontal side and the second pass puts the other's horizontal on the first's
+  vertical side; the second pass orders such pairs from the first pass's result.
+
 The solver is exact and needs no LP: every constraint is a difference constraint
 `x_v - x_u >= w`. Per independent component of moving segments we
 
@@ -293,13 +314,25 @@ The solver is exact and needs no LP: every constraint is a difference constraint
 2. if `t < separation`, retry with zero gap to obstacles (they may be touched);
 3. place every segment at the midpoint of its leftmost and rightmost feasible positions,
    which is feasible (the feasible set is convex) and integral after rounding down.
+   Components anchored on one side only (routes around the outside of the scene) are
+   packed against that side at gap `t` instead, with `t` capped at the separation.
+
+The constraint graph is acyclic (every constraint points forward in the scan order), so
+the extreme solutions are single forward and backward passes instead of Bellman-Ford,
+and the binary search costs `O(E log W)` per component. `Nudged::overlaps` counts
+segments still on top of each other (two port segments on one line, or a channel with no
+room); `Nudged::separation` is the smallest gap achieved.
 
 The result centres single segments in their alley and spreads bundles evenly. Wybrow et
 al. instead project desired positions (alley middles, or the corner a "U" bends around)
 onto the constraints with VPSC (quadratic programming); that mode is not implemented
 (open question). Every pass preserves the order of overlapping segments, and every moved
 segment sweeps an obstacle-free rectangle, so routes keep their topology (Marriott et
-al. 2014's notion of topology-preserving edge moves).
+al. 2014's notion of topology-preserving edge moves). The property test checks exactly
+that (vertical segments sweep with their original extent in the first pass, horizontal
+ones with their final extent in the second), plus obstacle avoidance, fixed ports,
+separation between movable segments, and that the drawn crossings equal the required
+ones.
 
 ## Pipeline (arXiv 2309.01671)
 

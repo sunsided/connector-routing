@@ -10,11 +10,14 @@
 extern crate alloc;
 
 pub mod check;
+pub mod crossing;
 mod error;
 mod geom;
 pub mod global;
 mod graph;
 pub mod incremental;
+mod nets;
+pub mod nudge;
 mod route;
 mod scene;
 mod search;
@@ -22,6 +25,7 @@ mod search;
 pub use error::Error;
 pub use geom::{Axis, DirSet, Direction, MAX_COORD, Point, Rect, Side};
 pub use graph::{RoutingGraph, VertexId};
+pub use nets::Net;
 pub use route::{Route, simplify};
 pub use scene::{ObstacleId, Port, PortId, Scene};
 pub use search::{

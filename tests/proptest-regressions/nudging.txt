@@ -1,0 +1,11 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 4f285c3505698228b6a315f1b8e3e15dc17e935035e788da9a2dfe000bebb2e0 # shrinks to rects = [Rect { min: Point { x: 29, y: 2 }, max: Point { x: 50, y: 3 } }], pairs = [((0, 14), (51, 2)), ((33, 0), (43, 15))]
+cc 3dbe38dfbf070b745b9902c2c24abb8efae01ad09f0292b932a3183b384a8d90 # shrinks to rects = [Rect { min: Point { x: 45, y: 6 }, max: Point { x: 64, y: 7 } }], pairs = [((11, 1), (58, 35)), ((0, 0), (0, 0)), ((6, 36), (49, 7)), ((33, 2), (6, 48)), ((0, 1), (7, 36))]
+cc ba49846f6fa3c2a3c5ffa57ed8021beb118803fe12c96317fffe7bff83d34989 # shrinks to rects = [Rect { min: Point { x: 3, y: 4 }, max: Point { x: 7, y: 6 } }], pairs = [((16, 0), (9, 6)), ((3, 7), (11, 5))]
+cc 0f92357d5b7f32b0f657178ea521dc04e7de4dcd566a55bee4598c86335a9a7e # shrinks to rects = [Rect { min: Point { x: 2, y: 0 }, max: Point { x: 10, y: 3 } }, Rect { min: Point { x: 16, y: 0 }, max: Point { x: 19, y: 1 } }], pairs = [((17, 3), (0, 0)), ((3, 4), (17, 0)), ((0, 7), (16, 0))]
+cc 764f93728a3f6fa6b40599d1fe06aa329b28b77f12a5622336f8cffd2bc9a062 # shrinks to rects = [Rect { min: Point { x: 14, y: 6 }, max: Point { x: 20, y: 7 } }, Rect { min: Point { x: 13, y: 0 }, max: Point { x: 15, y: 4 } }], pairs = [((2, 0), (15, 7)), ((0, 4), (19, 0))]
