@@ -10,6 +10,19 @@ repository = "https://github.com/sunsided/connector-routing"
 readme = "README.md"
 keywords = ["routing", "orthogonal", "pathfinding", "diagram", "planning"]
 categories = ["algorithms", "graphics", "no-std"]
+# Repository tooling stays out of the published crate.
+exclude = [
+    ".github/",
+    "scripts/",
+    ".pre-commit-config.yaml",
+    "Taskfile.dist.yaml",
+    "_typos.toml",
+    "clippy.toml",
+    "codecov.yml",
+    "deny.toml",
+    "release-plz.toml",
+    "rustfmt.toml",
+]
 
 [dependencies]
 # Single-connector A*. Path dependency on the sibling draft; must become a crates.io
