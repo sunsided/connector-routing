@@ -19,6 +19,7 @@ pub mod incremental;
 mod nets;
 pub mod nudge;
 pub mod pipeline;
+pub mod polyline;
 mod route;
 mod scene;
 mod search;
