@@ -63,9 +63,10 @@ Pre-release. The API is a draft and will change.
 
 ## MSRV
 
-The minimum supported Rust version is 1.85 (`rust-version` in `Cargo.toml`). It is a
-signal, not a contract: raising it is a minor release, never a patch release. Tests and
-benches may need a newer Rust.
+The minimum supported Rust version is 1.85 (`rust-version` in `Cargo.toml`); the
+`multi-objective` feature needs 1.86, the MSRV of `multiobjective-search`. It is a signal,
+not a contract: raising it is a minor release, never a patch release. Tests and benches
+may need a newer Rust.
 
 ## Contributing
 

@@ -39,8 +39,10 @@ applyTo: ".github/workflows/**,Taskfile.dist.yaml,**/Taskfile.dist.yaml,.pre-com
   accept the `$/` form yet. Re-enable it once actionlint does.
 - `cargo fmt` runs without `--all`, here and in `fuzz/`: `--all` also formats path
   dependencies and would rewrite the sibling checkouts.
-- `msrv` checks the library only (`cargo hack check --rust-version --all-features`, no
-  `--all-targets`): dev-dependencies may need a newer Rust. Do not add `--all-targets` back.
+- `msrv` checks the library only (`cargo hack check --rust-version`, no `--all-targets`):
+  dev-dependencies may need a newer Rust. Do not add `--all-targets` back. It checks default
+  features only, because `multi-objective` pulls in multiobjective-search, whose
+  `rust-version` is 1.86. Add `--all-features` back once both agree.
 - `fuzz/` is a separate nightly workspace (targets `route_scene` and `sleeve_route`). Its
   tasks live in `fuzz/Taskfile.dist.yaml`, included as `fuzz:`; CI's `fuzz` job mirrors
   `task fuzz:build` and `task fuzz:lint`.
