@@ -6,6 +6,9 @@ use connector_routing::{
     Connector, DirSet, Direction, Objective, Point, Port, Rect, Route, RoutingGraph, Scene,
     VertexId, check, crossing, nudge,
 };
+use proptest::prelude::*;
+
+use crate::support::rect;
 
 /// The vertex path along the polyline `points` (which must follow graph edges).
 fn path(graph: &RoutingGraph, points: &[(i32, i32)]) -> Vec<VertexId> {
@@ -134,4 +137,68 @@ fn shared_corner_crosses_once() {
         check::orthogonal_crossings(&nudged.routes[0], &nudged.routes[1]),
         1
     );
+}
+
+/// Routes for random free-port connectors among random boxes, or `None` if a port is
+/// walled in (the only expected error).
+fn random_routing(
+    rects: &[Rect],
+    pairs: Vec<((i32, i32), (i32, i32))>,
+) -> Option<(Scene, Vec<Connector<connector_routing::PortId>>, Vec<Route>)> {
+    let blocked = |p: Point| rects.iter().any(|r| r.interior_contains(p));
+    let mut scene = Scene::build(rects.iter().copied(), []).unwrap();
+    let mut connectors = Vec::new();
+    for ((ax, ay), (bx, by)) in pairs {
+        let (a, b) = (Point::new(ax, ay), Point::new(bx, by));
+        if blocked(a) || blocked(b) {
+            continue;
+        }
+
+        let source = scene.add_port(Port::free(a)).unwrap();
+        let target = scene.add_port(Port::free(b)).unwrap();
+        connectors.push(Connector { source, target });
+    }
+
+    match route_all(&scene, &connectors, &Config::default()) {
+        Ok(routing) => Some((scene, connectors, routing.routes)),
+        Err(connector_routing::Error::NoRoute { .. }) => None,
+        Err(e) => panic!("{e}"),
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(40))]
+
+    /// Required crossings are symmetric and sum to the total; crossing reduction never
+    /// raises the total, and every rerouted connector stays valid between its ports.
+    #[test]
+    fn reduction_never_adds_crossings(
+        rects in proptest::collection::vec(rect(30), 0..8),
+        pairs in proptest::collection::vec(((0..=30, 0..=30), (0..=30, 0..=30)), 2..10),
+    ) {
+        let Some((scene, connectors, mut routes)) = random_routing(&rects, pairs) else {
+            return Ok(());
+        };
+        let g = scene.graph();
+        let mut pairwise = 0;
+        for (i, a) in routes.iter().enumerate() {
+            for b in &routes[i + 1..] {
+                let ab = crossing::required_crossings(g, &a.vertices, &b.vertices);
+                prop_assert_eq!(ab, crossing::required_crossings(g, &b.vertices, &a.vertices));
+                pairwise += ab;
+            }
+        }
+
+        let before = crossing::total_crossings(g, &routes);
+        prop_assert_eq!(before, pairwise);
+
+        let weights = Objective::default().weights(g).unwrap();
+        crossing::reduce_crossings(g, &mut routes, weights, 8);
+        prop_assert!(crossing::total_crossings(g, &routes) <= before);
+        for (c, r) in connectors.iter().zip(&routes) {
+            check::orthogonal(&r.points, &rects).unwrap();
+            prop_assert_eq!(r.points.first(), Some(&scene.port(c.source).unwrap().point));
+            prop_assert_eq!(r.points.last(), Some(&scene.port(c.target).unwrap().point));
+        }
+    }
 }
