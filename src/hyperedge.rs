@@ -357,6 +357,19 @@ impl Forest {
         self.cost[n as usize] != u64::MAX
     }
 
+    /// Forgets every node owned by sub-route `a` or `b`, so their merge regrows from
+    /// its own nodes.
+    fn forget(&mut self, a: usize, b: usize) {
+        for n in 0..self.cost.len() {
+            let owner = self.owner[n];
+            if owner == a || owner == b {
+                self.cost[n] = u64::MAX;
+                self.owner[n] = usize::MAX;
+                self.parent[n] = u32::MAX;
+            }
+        }
+    }
+
     /// The separated edges from `n` back to its seed.
     fn path_edges(
         &self,
@@ -376,96 +389,153 @@ impl Forest {
 
 /// Heuristic 2: the interleaved shortest path terminal forest and spanning tree.
 fn interleaved(separated: &Separated<'_>) -> Option<BTreeSet<(Node, Node)>> {
-    let total = separated.terminals.len();
-    let mut forest = Forest::new(2 * separated.graph.capacity());
-    let mut routes: Vec<SubRoute> = Vec::new();
-    let mut frontier: BinaryHeap<Reverse<(u64, Node, Node, usize)>> = BinaryHeap::new();
-    let mut bridges: BinaryHeap<Reverse<(u64, Node, Node)>> = BinaryHeap::new();
-    for &t in separated.terminals.keys() {
-        let id = routes.len();
-        let seeds = separated.seeds(t);
-        routes.push(SubRoute {
-            edges: BTreeSet::new(),
-            nodes: seeds.iter().copied().collect(),
-            terminals: core::iter::once(t).collect(),
-        });
-        for n in seeds {
-            frontier.push(Reverse((0, n, u32::MAX, id)));
+    let mut search = Interleaved::new(separated);
+    loop {
+        if search.grows_next()? {
+            search.grow();
+            continue;
+        }
+
+        let Reverse((c, a, b)) = search.bridges.pop().expect("peeked");
+        if !search.is_fresh(c, a, b) {
+            continue;
+        }
+
+        if let Some(edges) = search.merge(a, b) {
+            return Some(edges);
+        }
+    }
+}
+
+/// A frontier entry: cost, node, parent node and owning sub-route.
+type Growth = (u64, Node, Node, usize);
+
+/// A candidate bridge between two sub-routes: total cost and the two nodes it joins.
+type Bridge = (u64, Node, Node);
+
+/// The state of [`interleaved`]: sub-routes grow shortest path trees in lockstep, and
+/// the cheapest bridge between two of them merges them once no growth is cheaper.
+struct Interleaved<'a> {
+    /// The separated graph searched.
+    separated: &'a Separated<'a>,
+    /// The number of terminals; a sub-route with all of them is the result.
+    total: usize,
+    /// Costs, parents and owners of the reached nodes.
+    forest: Forest,
+    /// Every sub-route created so far, indexed by owner id.
+    routes: Vec<SubRoute>,
+    /// Whether each sub-route is still growing (not yet merged into another).
+    alive: Vec<bool>,
+    /// Nodes to reach next, cheapest first.
+    frontier: BinaryHeap<Reverse<Growth>>,
+    /// Bridges between sub-routes, cheapest first; may hold stale entries.
+    bridges: BinaryHeap<Reverse<Bridge>>,
+}
+
+impl<'a> Interleaved<'a> {
+    /// One sub-route per terminal, each seeded at the terminal's nodes.
+    fn new(separated: &'a Separated<'a>) -> Self {
+        let mut search = Self {
+            separated,
+            total: separated.terminals.len(),
+            forest: Forest::new(2 * separated.graph.capacity()),
+            routes: Vec::new(),
+            alive: Vec::new(),
+            frontier: BinaryHeap::new(),
+            bridges: BinaryHeap::new(),
+        };
+        for &t in separated.terminals.keys() {
+            let seeds = separated.seeds(t);
+            search.add_route(SubRoute {
+                edges: BTreeSet::new(),
+                nodes: seeds.iter().copied().collect(),
+                terminals: core::iter::once(t).collect(),
+            });
+        }
+
+        search
+    }
+
+    /// Adds a growing sub-route and seeds the frontier at its nodes.
+    fn add_route(&mut self, route: SubRoute) {
+        let id = self.routes.len();
+        for &n in &route.nodes {
+            self.frontier.push(Reverse((0, n, u32::MAX, id)));
+        }
+
+        self.routes.push(route);
+        self.alive.push(true);
+    }
+
+    /// Whether the next step grows a tree (`true`) or takes a bridge (`false`); `None`
+    /// once both queues are empty and the terminals cannot be connected.
+    fn grows_next(&self) -> Option<bool> {
+        match (self.frontier.peek(), self.bridges.peek()) {
+            (Some(Reverse(f)), Some(Reverse(b))) => Some(f.0.saturating_mul(2) < b.0),
+            (Some(_), None) => Some(true),
+            (None, Some(_)) => Some(false),
+            (None, None) => None,
         }
     }
 
-    let mut alive: Vec<bool> = alloc::vec![true; routes.len()];
-    loop {
-        let grow = match (frontier.peek(), bridges.peek()) {
-            (Some(Reverse(f)), Some(Reverse(b))) => f.0.saturating_mul(2) < b.0,
-            (Some(_), None) => true,
-            (None, Some(_)) => false,
-            (None, None) => return None,
-        };
-
-        if grow {
-            let Reverse((cost, n, parent, owner)) = frontier.pop().expect("peeked");
-            if forest.reached(n) || !alive[owner] {
-                continue;
-            }
-
-            forest.cost[n as usize] = cost;
-            forest.parent[n as usize] = parent;
-            forest.owner[n as usize] = owner;
-            separated.edges(n, |next, w| {
-                if forest.reached(next) {
-                    if forest.owner[next as usize] != owner {
-                        let c = cost
-                            .saturating_add(forest.cost[next as usize])
-                            .saturating_add(w);
-                        bridges.push(Reverse((c, n, next)));
-                    }
-                } else {
-                    frontier.push(Reverse((cost.saturating_add(w), next, n, owner)));
-                }
-            });
-            continue;
+    /// Reaches the cheapest frontier node, unless it is reached already or its sub-route
+    /// was merged, and pushes its neighbours as growths or bridges.
+    fn grow(&mut self) {
+        let Reverse((cost, n, parent, owner)) = self.frontier.pop().expect("peeked");
+        if self.forest.reached(n) || !self.alive[owner] {
+            return;
         }
 
-        let Reverse((c, a, b)) = bridges.pop().expect("peeked");
+        let forest = &mut self.forest;
+        forest.cost[n as usize] = cost;
+        forest.parent[n as usize] = parent;
+        forest.owner[n as usize] = owner;
+        let (frontier, bridges) = (&mut self.frontier, &mut self.bridges);
+        self.separated.edges(n, |next, w| {
+            if !forest.reached(next) {
+                frontier.push(Reverse((cost.saturating_add(w), next, n, owner)));
+            } else if forest.owner[next as usize] != owner {
+                let c = cost
+                    .saturating_add(forest.cost[next as usize])
+                    .saturating_add(w);
+                bridges.push(Reverse((c, n, next)));
+            }
+        });
+    }
+
+    /// Whether the bridge of cost `c` from `a` to `b` still joins two live sub-routes at
+    /// that cost; merges and regrowth make older bridges stale.
+    fn is_fresh(&self, c: u64, a: Node, b: Node) -> bool {
+        let forest = &self.forest;
+        if !forest.reached(a) || !forest.reached(b) {
+            return false;
+        }
+
         let (oa, ob) = (forest.owner[a as usize], forest.owner[b as usize]);
-        // Skip bridges made stale by a merge or a regrowth.
-        let fresh = forest.reached(a)
-            && forest.reached(b)
-            && oa != ob
-            && alive[oa]
-            && alive[ob]
+
+        oa != ob
+            && self.alive[oa]
+            && self.alive[ob]
             && c == forest.cost[a as usize]
                 .saturating_add(forest.cost[b as usize])
-                .saturating_add(bridge_weight(separated, a, b));
-        if !fresh {
-            continue;
-        }
+                .saturating_add(bridge_weight(self.separated, a, b))
+    }
 
-        let merged = merge(&forest, &routes[oa], &routes[ob], a, b);
-        if merged.terminals.len() == total {
+    /// Merges the sub-routes of `a` and `b` along their bridge. Returns the edges if the
+    /// merged sub-route connects every terminal; otherwise it regrows from scratch.
+    fn merge(&mut self, a: Node, b: Node) -> Option<BTreeSet<(Node, Node)>> {
+        let (oa, ob) = (self.forest.owner[a as usize], self.forest.owner[b as usize]);
+        let merged = merge(&self.forest, &self.routes[oa], &self.routes[ob], a, b);
+        if merged.terminals.len() == self.total {
             return Some(merged.edges);
         }
 
-        alive[oa] = false;
-        alive[ob] = false;
-        let id = routes.len();
-        // Regrow from the merged sub-route: forget everything its parts reached.
-        for n in 0..forest.cost.len() {
-            let owner = forest.owner[n];
-            if owner == oa || owner == ob {
-                forest.cost[n] = u64::MAX;
-                forest.owner[n] = usize::MAX;
-                forest.parent[n] = u32::MAX;
-            }
-        }
+        self.alive[oa] = false;
+        self.alive[ob] = false;
+        self.forest.forget(oa, ob);
+        self.add_route(merged);
 
-        for &n in &merged.nodes {
-            frontier.push(Reverse((0, n, u32::MAX, id)));
-        }
-
-        routes.push(merged);
-        alive.push(true);
+        None
     }
 }
 

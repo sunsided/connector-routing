@@ -93,15 +93,32 @@ pub(crate) fn pass(
         return false;
     }
 
-    // Arcs between tied groups: root(r) - root(l) >= gap + offset(l) - offset(r).
-    let mut arcs: Vec<(Node, Node, i64)> = Vec::new();
-    for &(l, r) in &slides {
-        let ((gl, ol), (gr, or)) = (ties.find(l), ties.find(r));
-        if gl != gr {
-            arcs.push((gl, gr, ol - or));
-        }
-    }
+    let mut arcs = slide_arcs(&ties, &slides);
+    arcs.extend(constraint_arcs(&ties, &list, separation));
+    arcs.extend(box_arcs(&ties, boxes, position_axis));
+    let Some(solution) = longest_paths(&arcs, start(boxes, segments, axis)) else {
+        return false;
+    };
 
+    apply(&ties, &solution, boxes, segments, axis)
+}
+
+/// Arcs that keep each sliding port between the sides of its box, between tied groups:
+/// `root(r) - root(l) >= offset(l) - offset(r)`.
+fn slide_arcs(ties: &Ties, slides: &[(Node, Node)]) -> Vec<(Node, Node, i64)> {
+    slides
+        .iter()
+        .filter_map(|&(l, r)| {
+            let ((gl, ol), (gr, or)) = (ties.find(l), ties.find(r));
+            (gl != gr).then_some((gl, gr, ol - or))
+        })
+        .collect()
+}
+
+/// Arcs for the separation constraints: `root(r) - root(l) >= gap + offset(l) -
+/// offset(r)`, with no gap for shape constraints and `separation` for the others. Wall
+/// constraints and items without a node are skipped.
+fn constraint_arcs(ties: &Ties, list: &[Constraint], separation: i64) -> Vec<(Node, Node, i64)> {
     let node = |item: Item| -> Option<(Node, i64)> {
         match item {
             Item::Segment(s) => Some(ties.find(Node::Segment(s))),
@@ -111,37 +128,48 @@ pub(crate) fn pass(
             Item::WallLow | Item::WallHigh => None,
         }
     };
-    for c in &list {
-        let gap = match c.kind {
-            Kind::Shape => 0,
-            Kind::Wall => continue,
-            Kind::Segments | Kind::Obstacle | Kind::Boxes => separation,
-        };
-        let (Some((l, ol)), Some((r, or))) = (node(c.left), node(c.right)) else {
-            continue;
-        };
-        if l != r {
-            arcs.push((l, r, gap + ol - or));
-        }
-    }
 
-    for (b, rect) in boxes.iter().enumerate() {
-        let (lo, hi) = rect.range(position_axis);
-        let (l, ol) = ties.find(Node::Low(b));
-        let (r, or) = ties.find(Node::High(b));
-        if l != r {
-            arcs.push((l, r, i64::from(hi) - i64::from(lo) + ol - or));
-        }
-    }
+    list.iter()
+        .filter_map(|c| {
+            let gap = match c.kind {
+                Kind::Shape => 0,
+                Kind::Wall => return None,
+                Kind::Segments | Kind::Obstacle | Kind::Boxes => separation,
+            };
+            let ((l, ol), (r, or)) = (node(c.left)?, node(c.right)?);
+            (l != r).then_some((l, r, gap + ol - or))
+        })
+        .collect()
+}
 
-    let Some(solution) = longest_paths(&arcs, start(boxes, segments, axis)) else {
-        return false;
-    };
+/// Arcs that keep every box at least its current extent across the pass axis: its high
+/// side lies at least its size above its low side.
+fn box_arcs(ties: &Ties, boxes: &[Rect], position_axis: Axis) -> Vec<(Node, Node, i64)> {
+    boxes
+        .iter()
+        .enumerate()
+        .filter_map(|(b, rect)| {
+            let (lo, hi) = rect.range(position_axis);
+            let (l, ol) = ties.find(Node::Low(b));
+            let (r, or) = ties.find(Node::High(b));
+            (l != r).then_some((l, r, i64::from(hi) - i64::from(lo) + ol - or))
+        })
+        .collect()
+}
+
+/// Moves the segments along `axis` and the box sides across it to the positions in
+/// `solution`. Returns `false` (and changes nothing) if a position leaves `i32`.
+fn apply(
+    ties: &Ties,
+    solution: &BTreeMap<Node, i64>,
+    boxes: &mut [Rect],
+    segments: &mut Segments,
+    axis: Axis,
+) -> bool {
     let value = |n: Node| -> i64 {
         let (root, offset) = ties.find(n);
         solution.get(&root).copied().unwrap_or(0) + offset
     };
-
     let Ok(lines) = (0..segments.list.len())
         .map(|s| {
             if segments.list[s].axis == axis {
@@ -154,15 +182,21 @@ pub(crate) fn pass(
     else {
         return false;
     };
+    let Ok(sides) = (0..boxes.len())
+        .map(|b| {
+            Ok((
+                i32::try_from(value(Node::Low(b)))?,
+                i32::try_from(value(Node::High(b)))?,
+            ))
+        })
+        .collect::<Result<Vec<(i32, i32)>, core::num::TryFromIntError>>()
+    else {
+        return false;
+    };
+
     segments.line = lines;
-    for (b, rect) in boxes.iter_mut().enumerate() {
-        let (Ok(lo), Ok(hi)) = (
-            i32::try_from(value(Node::Low(b))),
-            i32::try_from(value(Node::High(b))),
-        ) else {
-            return false;
-        };
-        *rect = match position_axis {
+    for (rect, (lo, hi)) in boxes.iter_mut().zip(sides) {
+        *rect = match axis.other() {
             Axis::X => Rect::new(lo, rect.min.y, hi, rect.max.y),
             Axis::Y => Rect::new(rect.min.x, lo, rect.max.x, hi),
         };

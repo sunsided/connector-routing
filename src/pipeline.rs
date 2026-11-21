@@ -24,8 +24,9 @@ use crate::crossing;
 use crate::error::Error;
 use crate::geom::{Point, Rect};
 use crate::global;
+use crate::graph::RoutingGraph;
 use crate::nudge;
-use crate::scene::{Port, Scene};
+use crate::scene::{Port, PortId, Scene};
 use crate::search::Endpoints;
 
 pub use channels::channel_graph;
@@ -124,51 +125,15 @@ pub fn draw(boxes: &[Rect], edges: &[(usize, usize)], config: &Config) -> Result
         boxes.iter().copied(),
         ports.iter().flat_map(|&(a, b)| [a, b]),
     )?;
-    // Ports get ids in input order, two per edge.
-    let ids: Vec<_> = scene.ports().map(|(id, _)| id).collect();
-    let connectors: Vec<Connector<_>> = ids
-        .chunks(2)
-        .map(|pair| Connector {
-            source: pair[0],
-            target: pair[1],
-        })
-        .collect();
-
-    let channel = (config.graph == GraphKind::Channels).then(|| {
-        let margin = i32::try_from(4 * config.nudging.separation + 8).unwrap_or(64);
-        let frame = boxes
-            .iter()
-            .copied()
-            .reduce(|a, b| a.union(&b))
-            .map_or(Rect::new(-margin, -margin, margin, margin), |r| {
-                r.buffer(margin)
-            });
-        channel_graph(
-            boxes,
-            &scene.ports().map(|(_, p)| p).collect::<Vec<_>>(),
-            frame,
-        )
-    });
-    let on_channels = channel.as_ref().and_then(|graph| {
-        let ends: Option<Vec<Endpoints>> = ports
-            .iter()
-            .map(|&(a, b)| {
-                Some(Endpoints {
-                    source: graph.vertex_at(a.point)?,
-                    source_directions: a.directions,
-                    target: graph.vertex_at(b.point)?,
-                    target_directions: b.directions,
-                })
-            })
-            .collect();
-        let routing = global::route_all_on(graph, boxes, &ends?, &config.routing).ok()?;
-        Some((graph, routing))
-    });
-    let (graph, mut routing, kind) = match on_channels {
-        Some((graph, routing)) => (graph, routing, GraphKind::Channels),
-        None => (
+    let (channels, on_channels) = (config.graph == GraphKind::Channels)
+        .then(|| channel_routing(&scene, boxes, &ports, config))
+        .flatten()
+        .unzip();
+    let (graph, mut routing, kind) = match (&channels, on_channels) {
+        (Some(graph), Some(routing)) => (graph, routing, GraphKind::Channels),
+        _ => (
             scene.graph(),
-            global::route_all(&scene, &connectors, &config.routing)?,
+            global::route_all(&scene, &connectors(&scene), &config.routing)?,
             GraphKind::Visibility,
         ),
     };
@@ -188,21 +153,78 @@ pub fn draw(boxes: &[Rect], edges: &[(usize, usize)], config: &Config) -> Result
         Some(f) => (f.routes.clone(), f.boxes.clone()),
         None => (nudged.routes.clone(), boxes.to_vec()),
     };
-    let mut crossings = 0;
-    for (i, a) in routes.iter().enumerate() {
-        for b in &routes[i + 1..] {
-            crossings += crate::check::orthogonal_crossings(a, b);
-        }
-    }
 
     Ok(Drawing {
         ports,
+        crossings: crossings(&routes),
         routes,
-        crossings,
         overuse,
         separation: nudged.separation,
         graph: kind,
         boxes: out_boxes,
         full: full.is_some(),
     })
+}
+
+/// One connector per edge, between the two ports [`Scene::build`] added for it (ports get
+/// ids in input order, two per edge).
+fn connectors(scene: &Scene) -> Vec<Connector<PortId>> {
+    let ids: Vec<_> = scene.ports().map(|(id, _)| id).collect();
+
+    ids.chunks(2)
+        .map(|pair| Connector {
+            source: pair[0],
+            target: pair[1],
+        })
+        .collect()
+}
+
+/// Routes every edge on the channel graph of arXiv 2309.01671, in a frame grown around the
+/// boxes by a margin that leaves room for nudging.
+///
+/// Returns the graph and its routing, or `None` if a port is not a channel-graph vertex or
+/// routing on the channels fails; the caller then falls back to the visibility graph.
+fn channel_routing(
+    scene: &Scene,
+    boxes: &[Rect],
+    ports: &[(Port, Port)],
+    config: &Config,
+) -> Option<(RoutingGraph, global::Routing)> {
+    let margin = i32::try_from(4 * config.nudging.separation + 8).unwrap_or(64);
+    let frame = boxes
+        .iter()
+        .copied()
+        .reduce(|a, b| a.union(&b))
+        .map_or(Rect::new(-margin, -margin, margin, margin), |r| {
+            r.buffer(margin)
+        });
+    let graph = channel_graph(
+        boxes,
+        &scene.ports().map(|(_, p)| p).collect::<Vec<_>>(),
+        frame,
+    );
+    let ends: Option<Vec<Endpoints>> = ports
+        .iter()
+        .map(|&(a, b)| {
+            Some(Endpoints {
+                source: graph.vertex_at(a.point)?,
+                source_directions: a.directions,
+                target: graph.vertex_at(b.point)?,
+                target_directions: b.directions,
+            })
+        })
+        .collect();
+    let routing = global::route_all_on(&graph, boxes, &ends?, &config.routing).ok()?;
+
+    Some((graph, routing))
+}
+
+/// The number of crossings between different routes of a drawing.
+fn crossings(routes: &[Vec<Point>]) -> usize {
+    routes
+        .iter()
+        .enumerate()
+        .flat_map(|(i, a)| routes[i + 1..].iter().map(move |b| (a, b)))
+        .map(|(a, b)| crate::check::orthogonal_crossings(a, b))
+        .sum()
 }
