@@ -292,6 +292,27 @@ pub fn route_all(
     })
 }
 
+/// The total channel overuse of `routes` in `scene` for tracks of pitch `separation`:
+/// the sum over resources of tracks used beyond capacity (see [`route_all`]).
+#[must_use]
+pub fn overuse(scene: &Scene, routes: &[Route], separation: u32) -> u64 {
+    let graph = scene.graph();
+    let resources = Resources::new(graph, &scene.rects(), separation);
+    let mut congestion = Congestion {
+        resources: &resources,
+        occupancy: alloc::vec![0; resources.len()],
+        history: alloc::vec![0; resources.len()],
+        present: 0,
+        straight: alloc::vec![[0, 0]; graph.capacity()],
+        crossing_penalty: 0,
+    };
+    for route in routes {
+        congestion.apply(graph, route, true);
+    }
+
+    congestion.overuse()
+}
+
 /// Rips up `slot`'s route (if any) and routes the connector again under the current
 /// congestion.
 fn reroute_one(

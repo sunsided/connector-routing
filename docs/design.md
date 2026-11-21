@@ -53,10 +53,11 @@ Priorities, in this order: correctness, performance, developer experience.
 ## Routing graph
 
 `RoutingGraph` is a partial grid: vertices are points, and each vertex has at most four
-neighbours, one per direction, joined by obstacle-free axis-parallel edges. Both the OVG
-and the channel graph of arXiv 2309.01671 are routing graphs, so the searches, the
-congestion model, ordering and nudging work on either. Vertex ids are slots that stay
-stable while the graph is updated; freed slots are reused.
+neighbours, one per direction, joined by obstacle-free axis-parallel edges. The OVG is
+the routing graph of every orthogonal router here; the searches, congestion, ordering
+and nudging only rely on the partial-grid structure, so another builder (such as the
+channel graph of arXiv 2309.01671, not built) could plug in. Vertex ids are slots that
+stay stable while the graph is updated; freed slots are reused.
 
 ### Orthogonal visibility graph (Wybrow et al. 2009, section 3)
 
@@ -182,13 +183,17 @@ be the bend point itself, as in a U-turn around a box), and a node reached that 
 not bend again in place. Nodes next to the ports cover turns that port directions force
 without a supporting obstacle.
 
-**Result of the test (not the default).** The property test against brute force found
-instances where the 1-bend search returns a route with two more bends than the optimum
-(touching obstacles with side ports; port directions forcing unsupported turns in free
-space). Its routes are always valid and never cheaper than the optimum, and it falls back
-to the OVG search when it finds nothing. So `Search::Ovg` is the default and
-`Search::OneBend` is an opt-in speed-up. Theorem 1 covers pure length-and-bends only in
-any case; PathFinder searches the OVG.
+**Result of the test (not the default).** With free port directions the 1-bend search
+matched brute force on every lattice instance tested. With ports on obstacle sides it
+does not: the regression `one_bend_misses_slit_between_touching_boxes` has an optimum of
+length 20 with 6 bends that leaves the port, turns back into a slit between touching
+boxes and squeezes through it, turning where no corner supports the segment; the 1-bend
+search returns length 38 with 4 bends. Its routes are always valid and never cheaper than
+the optimum, and it falls back to the OVG search when it finds nothing. It is also not
+faster in this lazy form (about 70 times slower than the OVG A* in the benchmark: each
+expansion walks whole rays and their perpendiculars). So `Search::Ovg` is the default and
+`Search::OneBend` is opt-in. Theorem 1 covers pure length-and-bends only in any case;
+PathFinder searches the OVG.
 
 ### Brute-force oracle
 
@@ -244,30 +249,38 @@ the ordering stage instead.
 
 ### Path ordering (Wybrow et al. 2009, section 5.1; arXiv 2309.01671)
 
-For every OVG edge used by several nets we need their order across the edge. We follow
-the orthogonal variant of Pupyrev et al. described in arXiv 2309.01671: every horizontal
-edge looks to the left and every vertical edge looks down. Two nets on an edge are
-compared by walking both paths from the edge in that direction while they share edges;
-at the first divergence the one turning more to the left of the walking direction is on
-the left side (a net that ends counts as straight and stops the walk); ties are broken by
-the walk in the other direction and finally by net index. This comparison is a total
-order on each edge, consistent along straight shared stretches, so order changes, and
-hence crossings, only happen at the ends of shared stretches or at shared corners, where
-they need no extra bends.
+For every OVG edge used by several nets we need their order across the edge. Each
+shared edge first gets a *pseudo direction* (Wybrow et al. 2009): starting from an
+unassigned shared edge, directions propagate along every net through its connected
+shared stretch, head to tail, bends included; where a net would force a conflict (the
+paper's split point) the first assignment stays. Two nets on an edge are compared by
+walking both from the edge towards its pseudo entry while they share edges; at the first
+divergence the one turning more to the left of the walking direction lies on the left
+side. A walk that reaches a net's end is inconclusive and the walk towards the exit
+decides; only if both are inconclusive does an end rank between a left turn and going
+straight; identical walks fall back to net index. Every walk from an edge is a sequence of
+ranked choices, so the comparison is a total order on each edge, and all edges of one
+shared stretch walk to the same end, so they agree: a necessary crossing happens once, at
+the exit (the paper's Theorem 3).
 
-A net that ends at a port does not say on which side another must pass, so a walk
-that reaches an end is inconclusive and the walk in the other direction decides; only if
-both are inconclusive does the end rank between a left turn and going straight. With a
-port inside a shared stretch, these pairwise orders can be intransitive (three nets
-whose orders come from different ends); the line order then breaks the cycle
-deterministically, which can cost a crossing. Tests assert exact crossings only for
-instances without such ports.
+The first version used the fixed look directions of arXiv 2309.01671 (horizontal edges
+look left, vertical edges down). On a shared stretch with a bend, the two legs then look
+to different ends and the order flips at the corner: three crossings instead of one. The
+regression test `shared_corner_crosses_once` keeps that case.
 
-This is a deliberate alternative to the paper's pseudo-direction method with split points
-and the `L ++ S ++ R` insertion. It gives the same guarantees the paper proves for path
-consistent shared-edge graphs (Theorem 3: minimal crossings, only at the ends of shared
-paths; Theorem 4: a planar shared-edge graph yields zero crossings), which the tests
-check, and it never needs split points.
+Line orders are topological orders of all pairwise orders plus hard geometric arcs:
+terminal points (below), and *fixed sides* (a movable segment beside a port-pinned
+segment on a line along an obstacle side must go to the free side). A pair whose two
+ends both decide and disagree crosses once in either order; that order is *soft* and is
+dropped first if the line's arcs contain a cycle, then the kiss arcs, and only then is a
+cycle broken deterministically. Tests assert that drawn crossings never fall below the
+required ones, and equal them exactly in obstacle-free scenes; with obstacles, a segment
+pinned by a port against an obstacle side can force an order that costs crossings the
+combinatorial count does not see. The planar-bundle test (Theorem 4) and the swap test
+(Theorem 3) check the guarantees with obstacles.
+
+Compared with the paper, the order comes from the walk comparator, not from the
+`L ++ S ++ R` insertion along the pseudo direction; both put crossings at the exits.
 
 `crossings(a, b)` counts the crossings two OVG paths must have: an isolated shared vertex
 where they interleave, plus one per maximal shared stretch whose two ends demand
@@ -277,8 +290,9 @@ different sides (Dwyer et al. 2006 count poly-line crossings the same way).
 
 When two paths must cross more than once, the section of one between their first and
 last shared vertex is replaced by the corresponding section of the other, if that keeps
-the path simple, keeps capacities, and strictly lowers that net's total crossing count
-(so the pass terminates).
+the path simple and strictly lowers that net's total crossing count (so the pass
+terminates). Capacities are not checked; the pipeline measures the overuse again
+afterwards (`global::overuse`).
 
 ### Nudging (Wybrow et al. 2009, section 5.2; arXiv 2309.01671)
 
@@ -421,7 +435,7 @@ not available; implemented from secondary descriptions).
 | Wybrow, Marriott, Stuckey, *Orthogonal Connector Routing*, GD 2009 | OVG definition and construction | checked; scan instead of sweep (shortcut) |
 | same | OVG definition, exactness under port directions | checked; frame and port stubs added (regression tests) |
 | same | cost `f(length, bends)`, `(vertex, direction)` A* | checked; exact bend estimate (paper's case 3 overestimates as read), no neighbour pruning, other tie-break |
-| same | ordering of shared edges, Theorems 3 and 4 | alternative (2309.01671 fixed directions); theorems tested |
+| same | ordering of shared edges: pseudo directions, Theorems 3 and 4 | checked; pseudo directions as in the paper, order by walk comparator instead of `L ++ S ++ R`; theorems tested |
 | same | nudging: separation constraints by scan line | checked |
 | same | nudging: VPSC projection to desired positions | alternative (max-gap + midpoint, exact); VPSC open |
 | Marriott, Stuckey, Wybrow, *Seeing Around Corners*, Diagrams 2014 | obstacle-hugging routes, 1-bend visibility graph | checked; lazy edges; not exact in tests, so opt-in, not default |
@@ -429,9 +443,9 @@ not available; implemented from secondary descriptions).
 | Wybrow, Marriott, Stuckey, *Incremental Connector Routing*, GD 2005 | poly-line visibility graph, invisibility graph, removal pruning | checked |
 | Dwyer, Marriott, Wybrow, *Integrating Edge Routing into Force-Directed Layout*, GD 2006 | exported topology constraints, crossing counting on shared paths | checked (routing parts only) |
 | Wybrow, PhD thesis, 2008 | libavoid background, poly-line cost formula | checked (cost formula) |
-| Hegemann, Wolff, *A Simple Pipeline for Orthogonal Graph Drawing*, arXiv 2309.01671 | port assignment, channel graph, ordering directions, crossing reduction, nudging LP | checked; LP replaced by exact max-gap |
+| Hegemann, Wolff, *A Simple Pipeline for Orthogonal Graph Drawing*, arXiv 2309.01671 | port assignment, crossing reduction, nudging LP, fixed look directions | checked; LP replaced by exact max-gap; channel graph not built; fixed look directions replaced (regression test) |
 | Gladisch et al., *Orthogonal Edge Routing for the EditLens*, arXiv 1612.05064 | incremental OVG update rules | checked; applied to the Wybrow OVG |
-| Nachmanson, Chen, *Browsing Large Graphs with Tile Pyramids and Sleeve Routing in the Browser*, arXiv 2605.17498 | sleeve routing, vertex cover batching, collapse | checked |
+| Nachmanson, Chen, *Browsing Large Graphs with Tile Pyramids and Sleeve Routing in the Browser*, arXiv 2605.17498 | sleeve routing, vertex cover batching, straight-line first | checked; vertex collapse not needed (boundary endpoints) |
 | McMurchie, Ebeling, *PathFinder*, FPGA 1995 | negotiated congestion | not checked |
 | Pupyrev et al., metro-line crossing minimisation | path order comparator | not checked (via 2309.01671) |
 | Dwyer, Marriott, Stuckey, VPSC / *Fast node overlap removal*, GD 2005 | scan-line constraint generation | not checked (via Wybrow 2009) |
@@ -448,14 +462,17 @@ not available; implemented from secondary descriptions).
    order, invalidation reports for scene mutations (Wybrow 2005, Dwyer 2006).
 4. Post-processing: path ordering, crossing count and reduction, constraint generation,
    exact difference-constraint nudging.
-5. Pipeline per arXiv 2309.01671: port assignment, channel routing graph, full run.
-6. Hyperedges (Wybrow 2012): separated OVG, Heuristics 1 and 2, local improvement.
-7. Sleeve routing: exact CDT, dual Dijkstra, funnel, vertex cover batching, collapse.
+5. Pipeline per arXiv 2309.01671: port assignment, full run (channel routing graph not
+   built).
+6. Hyperedges (Wybrow 2012): separated OVG, Heuristics 1 and 2 (local improvements not
+   built).
+7. Sleeve routing: exact CDT, dual Dijkstra, funnel, vertex cover batching.
 8. Poly-line routing (Wybrow 2005): visibility and invisibility graphs, incremental
    updates, removal pruning.
 9. Multi-objective Pareto routing behind `multi-objective`.
 
-All nine are implemented; the README's status list names the parts left out.
+All nine milestones are implemented except the parts named "not built" above and in the
+README's status list.
 
 ## Open questions (with the defaults taken)
 
@@ -466,8 +483,9 @@ All nine are implemented; the README's status list names the parts left out.
 - **Nudging placement.** Max common gap plus midpoint (spreading, 2309.01671) instead
   of VPSC projection to desired positions (Wybrow 2009). Default: separation 4, spread
   at most 8; `max_separation = u32::MAX` spreads over whole channels.
-- **Intransitive orders** with ports inside shared stretches can cost a crossing.
-  Default: deterministic cycle break.
+- **Forced orders.** With obstacles, port-pinned segments can force orders that cost
+  crossings beyond the combinatorial count. Default: hard geometric arcs win over soft
+  orders; remaining cycles are broken deterministically.
 - **Channel capacity model.** `(slab, gap)` resources with `h / separation + 1` tracks.
   Necessary, not sufficient, for full separation. Default as described.
 - **Default costs.** Global routing uses length 1, bend 10, crossing 20, 40 iterations;

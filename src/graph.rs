@@ -1,8 +1,8 @@
 //! The [`RoutingGraph`]: a partial grid whose vertices have at most one neighbour per
 //! [`Direction`].
 //!
-//! Both the orthogonal visibility graph and the channel graph of the pipeline are
-//! routing graphs, so the searches, congestion, ordering and nudging work on either.
+//! The orthogonal visibility graph is one; the searches, congestion, ordering and
+//! nudging rely only on the partial-grid structure, so other builders can plug in.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;

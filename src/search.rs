@@ -294,17 +294,18 @@ pub fn endpoints(scene: &Scene, source: PortId, target: PortId) -> Result<Endpoi
 /// Which single-connector search to use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Search {
-    /// A* over the orthogonal visibility graph (Wybrow et al. 2009). Exact.
+    /// A* over the orthogonal visibility graph (Wybrow et al. 2009). Optimal on the
+    /// graph, which with the routing frame and port stubs matched brute force on the
+    /// unit grid for inputs spaced at least a few units apart (see `docs/design.md`).
     #[default]
     Ovg,
     /// A* over the lazily generated 1-bend visibility graph (Marriott et al. 2014),
     /// exploring only obstacle-hugging routes, with [`Search::Ovg`] as the fallback when
     /// it finds nothing.
     ///
-    /// Not exact in general: the brute-force comparison found instances (touching
-    /// obstacles with side ports, and port directions that force turns no obstacle
-    /// supports) where it returns a route with two more bends than the optimum. Routes
-    /// are always valid and never cheaper than the optimum.
+    /// Not exact in general: on a slit between touching boxes it returns length 38 with
+    /// 4 bends where the optimum is 20 with 6. Routes are always valid and never cheaper
+    /// than the optimum. In this lazy form it is also slower than [`Search::Ovg`].
     OneBend,
 }
 

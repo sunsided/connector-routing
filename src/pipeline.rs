@@ -119,6 +119,8 @@ pub fn draw(boxes: &[Rect], edges: &[(usize, usize)], config: &Config) -> Result
         );
     }
 
+    // Crossing reduction does not check capacities, so measure the overuse again.
+    let overuse = global::overuse(&scene, &routing.routes, config.routing.separation);
     let nudged = nudge::nudge(scene.graph(), boxes, &routing.routes, &config.nudging);
     let mut crossings = 0;
     for (i, a) in nudged.routes.iter().enumerate() {
@@ -131,7 +133,7 @@ pub fn draw(boxes: &[Rect], edges: &[(usize, usize)], config: &Config) -> Result
         ports,
         routes: nudged.routes,
         crossings,
-        overuse: routing.overuse,
+        overuse,
         separation: nudged.separation,
     })
 }

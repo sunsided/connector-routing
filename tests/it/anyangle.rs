@@ -58,17 +58,16 @@ fn euclid(route: &[Point]) -> f64 {
         .sum()
 }
 
-/// Disjoint rectangles: one per chosen cell of a coarse lattice.
+/// Rectangles with disjoint interiors: one per chosen cell of a coarse lattice, filling
+/// up to the whole cell, so neighbours may touch along sides and at corners.
 fn disjoint_rects() -> impl Strategy<Value = Vec<Rect>> {
-    proptest::collection::btree_set((0_i32..5, 0_i32..5, 1_i32..8, 1_i32..8), 0..9).prop_map(
+    proptest::collection::btree_set((0_i32..5, 0_i32..5, 1_i32..=10, 1_i32..=10), 0..12).prop_map(
         |cells| {
             let mut used = std::collections::BTreeSet::new();
             cells
                 .into_iter()
                 .filter(|&(i, j, _, _)| used.insert((i, j)))
-                .map(|(i, j, w, h)| {
-                    Rect::new(i * 10 + 1, j * 10 + 1, i * 10 + 1 + w, j * 10 + 1 + h)
-                })
+                .map(|(i, j, w, h)| Rect::new(i * 10, j * 10, i * 10 + w, j * 10 + h))
                 .collect()
         },
     )
@@ -161,8 +160,14 @@ proptest! {
         let endpoints: Vec<Point> = pairs.iter().flat_map(|&(a, b)| [a, b]).collect();
         let router = SleeveRouter::new(&rects, &endpoints, 5).unwrap();
         let batched = router.route_all(&pairs);
+        // An endpoint on a wall shared by two touching boxes is out of reach (see
+        // `sleeve_cannot_reach_a_shared_wall`); so is one walled in.
+        let on_shared_wall = |p: Point| rects.iter().filter(|r| r.boundary_contains(p)).count() >= 2;
         for (&(a, b), route) in pairs.iter().zip(&batched) {
-            let route = route.as_ref().expect("the frame connects everything");
+            let Some(route) = route.as_ref() else {
+                prop_assert!(on_shared_wall(a) || on_shared_wall(b) || oracle(&rects, a, b).is_none());
+                continue;
+            };
             check::polyline(route, &rects).unwrap();
             prop_assert_eq!((route[0], *route.last().unwrap()), (a, b));
             let optimum = f64::from(u32::try_from(oracle(&rects, a, b).unwrap()).unwrap()) / 256.0;
@@ -170,4 +175,24 @@ proptest! {
             prop_assert!(euclid(route) >= optimum - 0.05);
         }
     }
+}
+
+/// A limit of sleeve routing: an endpoint on a wall shared by two touching boxes has no
+/// free triangle around it (the slit has no area), so no sleeve reaches it. Poly-line
+/// routing runs along the slit instead.
+#[test]
+fn sleeve_cannot_reach_a_shared_wall() {
+    let rects = [Rect::new(0, 0, 10, 10), Rect::new(10, 0, 20, 10)];
+    let (inside, outside) = (Point::new(10, 5), Point::new(30, 5));
+    let router = SleeveRouter::new(&rects, &[inside, outside], 5).unwrap();
+    assert_eq!(router.route(outside, inside), None);
+
+    let mut polyline = PolylineRouter::new(Config::default());
+    for r in rects {
+        polyline.add_obstacle(r).unwrap();
+    }
+
+    let c = polyline.add_connector(outside, inside).unwrap();
+    let route = polyline.route(c).unwrap().to_vec();
+    check::polyline(&route, &rects).unwrap();
 }

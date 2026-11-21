@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 2df784111c4a8eecf91e3dfdaff429b965f46647f38e8e778b4ad05203694d1a # shrinks to rects = [Rect { min: Point { x: 1, y: 21 }, max: Point { x: 7, y: 27 } }, Rect { min: Point { x: 11, y: 21 }, max: Point { x: 14, y: 27 } }], pairs = [((28, 9), (1, 30)), ((0, 36), (0, 1))]
+cc 9ef23da5f8dd7097cc37a6ee0f30bc5faba902a2caab2414a883d2f09bda0064 # shrinks to rects = [Rect { min: Point { x: 20, y: 20 }, max: Point { x: 30, y: 22 } }, Rect { min: Point { x: 30, y: 20 }, max: Point { x: 31, y: 22 } }], pairs = [((0, 0), (30, 21))]
