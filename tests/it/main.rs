@@ -6,6 +6,8 @@ mod global;
 mod hyperedges;
 mod nudging;
 mod ovg;
+#[cfg(feature = "multi-objective")]
+mod pareto;
 mod pipeline;
 mod single;
 mod support;

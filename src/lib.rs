@@ -19,6 +19,8 @@ pub mod hyperedge;
 pub mod incremental;
 mod nets;
 pub mod nudge;
+#[cfg(feature = "multi-objective")]
+pub mod pareto;
 pub mod pipeline;
 pub mod polyline;
 mod route;
