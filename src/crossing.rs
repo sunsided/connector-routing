@@ -218,7 +218,12 @@ fn sharing_pairs(routes: &[Route]) -> BTreeSet<(usize, usize)> {
 ///
 /// Returns the number of replacements. Replaced routes are rebuilt with their cost under
 /// `weights`; they may be longer.
-pub fn reduce_crossings(graph: &RoutingGraph, routes: &mut [Route], weights: Weights, max_rounds: u32) -> u32 {
+pub fn reduce_crossings(
+    graph: &RoutingGraph,
+    routes: &mut [Route],
+    weights: Weights,
+    max_rounds: u32,
+) -> u32 {
     let mut replaced = 0;
     for _ in 0..max_rounds {
         let changes = round(graph, routes);
@@ -285,10 +290,16 @@ fn replacement(
     }
 
     let (a, b) = (ia.path, ib.path);
-    let shared: Vec<usize> = (0..a.len()).filter(|&k| ib.position(a[k]).is_some()).collect();
+    let shared: Vec<usize> = (0..a.len())
+        .filter(|&k| ib.position(a[k]).is_some())
+        .collect();
     let (&first, &last) = (shared.first()?, shared.last()?);
     let (pf, pl) = (ib.position(a[first])?, ib.position(a[last])?);
-    let mut section: Vec<VertexId> = if pf <= pl { b[pf..=pl].to_vec() } else { b[pl..=pf].iter().rev().copied().collect() };
+    let mut section: Vec<VertexId> = if pf <= pl {
+        b[pf..=pl].to_vec()
+    } else {
+        b[pl..=pf].iter().rev().copied().collect()
+    };
     let mut candidate = a[..first].to_vec();
     candidate.append(&mut section);
     candidate.extend_from_slice(&a[last + 1..]);
@@ -299,12 +310,25 @@ fn replacement(
     // Only routes sharing a vertex with either version can cross it.
     let mut others = BTreeSet::new();
     for v in a.iter().chain(&candidate) {
-        others.extend(users.get(v).into_iter().flatten().copied().filter(|&k| k != i));
+        others.extend(
+            users
+                .get(v)
+                .into_iter()
+                .flatten()
+                .copied()
+                .filter(|&k| k != i),
+        );
     }
 
     let ic = Indexed::new(&candidate);
-    let before: u32 = others.iter().map(|&k| indexed_crossings(graph, ia, &indexed[k])).sum();
-    let after: u32 = others.iter().map(|&k| indexed_crossings(graph, &ic, &indexed[k])).sum();
+    let before: u32 = others
+        .iter()
+        .map(|&k| indexed_crossings(graph, ia, &indexed[k]))
+        .sum();
+    let after: u32 = others
+        .iter()
+        .map(|&k| indexed_crossings(graph, &ic, &indexed[k]))
+        .sum();
 
     (after < before).then_some(candidate)
 }
