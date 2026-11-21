@@ -1,0 +1,383 @@
+# connector-routing design
+
+Global connector routing: route many connectors at once around rectangular obstacles
+(the nodes of a diagram, the parts of a schematic, the cabinets of a cable plan),
+minimising length, bends, crossings and overlaps. The crate covers the whole chain from
+the routing graph to final, separated geometry, in three route styles:
+
+1. **Orthogonal** (the main style): the orthogonal visibility graph (OVG) of Wybrow,
+   Marriott and Stuckey (2009), single-connector A* over `(vertex, direction)`, the
+   1-bend visibility graph of Marriott, Stuckey and Wybrow (2014), global routing with
+   PathFinder negotiated congestion, path ordering, crossing reduction and nudging.
+2. **Sleeve** (smooth, any-angle): a constrained Delaunay triangulation of the free
+   space, Dijkstra over its dual graph and the funnel algorithm (arXiv 2605.17498).
+3. **Poly-line** (any-angle, shortest): the visibility graph over obstacle corners with
+   incremental updates (Wybrow, Marriott and Stuckey 2005).
+
+Priorities, in this order: correctness, performance, developer experience.
+
+## Geometry model
+
+- **Exact integer geometry.** Points are `i32` pairs. Every predicate (orientation,
+  in-circle, segment against rectangle, visibility) is evaluated exactly in `i64` or
+  `i128`. No floating point is used anywhere, so there are no robustness bugs and every
+  result is reproducible bit for bit.
+- **Coordinate range.** Input coordinates must lie in `[-2^29, 2^29]`
+  ([`MAX_COORD`]). This keeps the in-circle determinant of the CDT inside `i128` (its
+  terms are products of four coordinate differences of at most `2^30` each, times a
+  small constant) and leaves headroom for nudging margins. The API rejects larger
+  coordinates with an error instead of overflowing.
+- **Rectangles** are closed axis-aligned boxes with `min.x < max.x` and
+  `min.y < max.y`. Routes may touch an obstacle's boundary but must never enter its
+  **open interior**. Users who want clearance inflate their rectangles (a `buffer`
+  helper is provided); this is libavoid's "shape buffer distance".
+- **Overlapping obstacles** are allowed (containers, labels on nodes). An interesting
+  point that lies in the open interior of any obstacle is ignored; a port in such a
+  position is unreachable and routing it fails with an error.
+- **Axes.** `y` grows "up" in the documentation (`Direction::Up` is `+y`). Nothing in
+  the algorithms depends on handedness except the names of directions and sides, so
+  y-down screen coordinates work unchanged; `Up` then points down the screen.
+- **Ports.** A port is a point plus the set of directions in which a connector may leave
+  it (`DirSet`). A connector that *ends* at a port must arrive moving opposite to one of
+  those directions, so a port on the top side of a box allows `Up` and connectors arrive
+  moving `Down`. Ports are interesting points of the OVG.
+- **Lengths and costs** are `u64`. A route's cost is
+  `length_weight * length + bend_penalty * bends` (plus congestion and crossing terms in
+  global routing). Products are checked; an overflow is an error.
+- **Euclidean styles.** Sleeve and poly-line routes have irrational lengths. Their
+  predicates stay exact; their path *costs* are fixed-point Euclidean lengths computed
+  with integer square roots (`u64::isqrt` of squared lengths scaled by `2^16`). The
+  geometry of the result is exact (all route vertices are input points), only the
+  comparison of nearly equal path lengths may pick the longer one by a rounding margin.
+
+## Routing graph
+
+`RoutingGraph` is a partial grid: vertices are points, and each vertex has at most four
+neighbours, one per direction, joined by obstacle-free axis-parallel edges. Both the OVG
+and the channel graph of arXiv 2309.01671 are routing graphs, so the searches, the
+congestion model, ordering and nudging work on either. Vertex ids are slots that stay
+stable while the graph is updated; freed slots are reused.
+
+### Orthogonal visibility graph (Wybrow et al. 2009, section 3)
+
+Interesting points `I` are the corners of every obstacle and every port. From each
+interesting point not inside an obstacle, the *interesting horizontal segment* is the
+maximal obstacle-free horizontal segment through it (extended in both directions until
+it would enter an obstacle's open interior, or without bound); vertical segments are
+defined the same way. The OVG vertices are all intersections of an interesting
+horizontal with an interesting vertical segment, and edges join consecutive vertices
+along each segment.
+
+This is the paper's definition: the paper takes segments between pairs of mutually
+visible interesting points and nodes in `X_I x Y_I` visible from an interesting point on
+both axes, which is the same set of nodes and the same nearest-neighbour edges (checked
+against the original). Unbounded segments need no clipping, since every intersection
+lies within the bounding box of the interesting points.
+
+Two maximal segments on the same line are either equal or disjoint (they are separated
+by an obstacle of positive width), so a segment is keyed by its line and start and
+remembers the interesting points that generate it.
+
+Construction computes each segment by a scan over the obstacles (`O(|I| n)`, a
+documented shortcut against the `O(n log n)` sweep of the paper), then intersects the
+segments in `O(H log V + k)` with a sorted index of vertical segments.
+
+### Incremental OVG
+
+`Scene` keeps obstacles (stable `ObstacleId`s), ports (`PortId`s), the segments with
+their generators, and the routing graph, and updates them in place:
+
+- Adding, removing or moving obstacle `R` affects exactly the segments whose line
+  passes strictly through `R`'s `y` (or `x`) range and whose closed extent meets `R`'s
+  closed extent (they are blocked by `R`, or stopped by it), plus the interesting points
+  in `R`'s closure. All other segments keep their extent, since blocking only depends on
+  obstacles that meet the segment. The affected segments are removed together with
+  their vertices, and the segments of the affected generators are recomputed and
+  inserted.
+- Adding or removing a port adds or removes one generator.
+- Vertex insertion and removal relink the four-neighbour lists in `O(log)`.
+
+The test oracle compares the point and edge sets (not ids) of the incremental graph
+with a graph rebuilt from scratch after random add, move and remove sequences.
+
+The EditLens paper (arXiv 1612.05064) instead keeps an OVG whose edges are L-shaped
+connections between pairs of connector points, which is quadratic in the number of
+points; its incremental rules (delete the edges of a removed node, block the edges a new
+node covers) are what our segment-level update does on the smaller Wybrow graph. The
+paper's random-offset "local nudging" is not implemented; the exact nudging below
+replaces it.
+
+Every scene mutation returns the set of connectors whose committed routes it
+invalidates (a route through a new obstacle) or may improve (a removed obstacle that a
+cheaper path could cross, with the lower-bound pruning of Wybrow et al. 2005, adapted to
+the Manhattan metric). A layout engine can then reroute only those (Dwyer et al. 2006).
+
+## Single connector
+
+### A* over the OVG (Wybrow et al. 2009, section 4)
+
+The state is `(vertex, heading)`, where the heading is the direction of the last move,
+or "not moved yet" at the source. Moves never reverse. A move costs
+`length_weight * length`, plus `bend_penalty` when it changes the heading. The source
+expands only along its port's directions; the goal is the target vertex reached with a
+heading opposite to one of the target port's directions.
+
+The search runs on `heuristic_search::a_star` (a path dependency on the sibling crate,
+used read-only). The heuristic is `length_weight * manhattan + bend_penalty * b`, where
+`b` is the exact minimum number of bends from `(p, heading)` to the target with a valid
+arrival heading in the obstacle-free plane. This is a shortest-path distance in a
+relaxation, hence consistent. It is never weaker than the paper's `s_d` table and
+strictly tighter in four cases (checked against the original):
+
+| case (heading `D`, arrival `A`) | paper `s_d` | ours |
+|---|---|---|
+| `D` perpendicular to `A`, target ahead in `D` but not on the side `A` points to | 1 | 3 |
+| `D = reverse(A)`, target on the line ahead | 2 | 4 |
+| `D = reverse(A)`, at the target | 2 | 4 |
+| `D = A`, at the target | (case 4 in the paper) | 0 |
+
+A unit test enumerates the free-space value by breadth-first search on a grid and
+compares it with the closed form.
+
+Deviations from the paper: the paper prunes left/right neighbours whose visibility line
+"neither passes right by an obstacle nor contains the target"; we keep every neighbour
+(exactness first, and the 1-bend graph below removes the redundancy properly). The
+paper breaks ties by a time stamp, preferring the newest entry and the order straight,
+right, left; `heuristic_search` breaks ties by larger `g`, then first in, first out, and
+we generate straight, then right, then left. Both are deterministic.
+
+The cost model `f(length, bends)` of the paper is any monotone function; we support the
+weighted sum and, as exact lexicographic objectives, "shortest, then fewest bends" and
+"fewest bends, then shortest" (weights derived from bounds on the other term).
+
+### 1-bend visibility graph (Marriott et al. 2014)
+
+Nodes are `(interesting point, direction)` pairs: obstacle corners with a direction that
+runs along one of the corner's sides, and ports. An edge joins two nodes when an
+orthogonal path with one bend (or none) connects them, leaving the first node in its
+direction and hitting the second node's corner from outside. By the paper's Theorems 1
+and 2 every optimal route has a topologically equivalent obstacle-hugging route of the
+same length and bends, whose intermediate segments each pass a supporting corner, so
+searching over 1-bend edges between supports is exact for the length-and-bends cost.
+
+We generate the 1-bend successors lazily by walking the OVG rays from a node, so the
+quadratic edge set is never stored. Whether it becomes the default single-connector
+search is decided by tests: a property test compares its cost with the OVG A* and with a
+brute-force grid search on random scenes, including ports on corners, restricted port
+directions, and touching and overlapping obstacles. It does not apply to global routing:
+congestion and crossing terms break the equivalence of topologically equivalent routes,
+so PathFinder searches the OVG.
+
+### Brute-force oracle
+
+Because all coordinates are integers, an optimal orthogonal route can be slid onto
+integer lines (every segment can be moved onto the line of an interesting point without
+growing), and clamping a route into the bounding box of all interesting points never
+increases its length or bends. Tests therefore search the full unit grid of the
+bounding box (plus padding, to confirm the clamping argument) with the same
+`(point, heading)` semantics, and compare the optimal cost.
+
+## Global routing
+
+### Resources and capacities
+
+Connectors may share OVG edges: nudging separates them later. What limits sharing is
+the width of the channel. The resource model:
+
+- The `x` axis is split into *elementary slabs* between consecutive distinct `x`
+  coordinates of vertical OVG lines (and symmetrically for `y`).
+- In each slab, the obstacle-free `y` intervals are its *gaps*. A horizontal OVG edge
+  crosses one gap in each slab it spans; that `(slab, gap)` pair is a resource, shared
+  by every horizontal edge in the same gap, whatever line it is on.
+- The capacity of a gap of height `h` is `floor(h / separation) + 1` tracks (segments
+  may touch obstacle boundaries), unbounded for gaps that reach infinity.
+
+Per-cross-section capacity is necessary but not sufficient for separation `δ`:
+chained segments in a staircase can need more room than any single cross-section shows.
+So nudging always reports the separation it achieved, and no test assumes that zero
+overuse implies full separation.
+
+### PathFinder (McMurchie and Ebeling 1995; not checked against the original)
+
+Each iteration routes the nets in a deterministic order (by decreasing half-perimeter
+of the bounding box, ties by index) with A* where a resource `r` costs
+`base_r * (1 + h_r) * (1 + p * overuse_r(+1))`, `base_r` being the slab width times the
+length weight. After each iteration, `h_r += history_increment * overuse_r` and the
+present factor `p` grows geometrically. The first iteration routes every net; later
+iterations rip up and reroute only the nets that use an overused resource. The loop stops
+when no resource is overused or after `max_iterations`, and reports the overuse.
+
+Integer arithmetic throughout, saturating, so the run is deterministic. Factors are at
+least one, so the free-space heuristic stays admissible.
+
+A crossing penalty is charged when a route passes straight through a vertex that
+another net passes straight through in the perpendicular direction (a certain
+crossing). Crossings at shared corners depend on the later ordering and are counted by
+the ordering stage instead.
+
+## Post-processing
+
+### Path ordering (Wybrow et al. 2009, section 5.1; arXiv 2309.01671)
+
+For every OVG edge used by several nets we need their order across the edge. We follow
+the orthogonal variant of Pupyrev et al. described in arXiv 2309.01671: every horizontal
+edge looks to the left and every vertical edge looks down. Two nets on an edge are
+compared by walking both paths from the edge in that direction while they share edges;
+at the first divergence the one turning more to the left of the walking direction is on
+the left side (a net that ends counts as straight and stops the walk); ties are broken by
+the walk in the other direction and finally by net index. This comparison is a total
+order on each edge, consistent along straight shared stretches, so order changes, and
+hence crossings, only happen at the ends of shared stretches or at shared corners, where
+they need no extra bends.
+
+This is a deliberate alternative to the paper's pseudo-direction method with split points
+and the `L ++ S ++ R` insertion. It gives the same guarantees the paper proves for path
+consistent shared-edge graphs (Theorem 3: minimal crossings, only at the ends of shared
+paths; Theorem 4: a planar shared-edge graph yields zero crossings), which the tests
+check, and it never needs split points.
+
+`crossings(a, b)` counts the crossings two OVG paths must have: an isolated shared vertex
+where they interleave, plus one per maximal shared stretch whose two ends demand
+different sides (Dwyer et al. 2006 count poly-line crossings the same way).
+
+### Crossing reduction (arXiv 2309.01671)
+
+When two paths must cross more than once, the section of one between their first and
+last shared vertex is replaced by the corresponding section of the other, if that keeps
+the path simple, keeps capacities, and strictly lowers that net's total crossing count
+(so the pass terminates).
+
+### Nudging (Wybrow et al. 2009, section 5.2; arXiv 2309.01671)
+
+Paths become maximal segments. The horizontal pass moves vertical segments, the
+vertical pass horizontal ones; a segment ending at a port is fixed. Constraint
+generation follows Dwyer's scan line (used by both papers): objects (segments and
+obstacle sides) are ordered by position and, on the same line, by the path order;
+sweeping along the other axis, each newly opened object is constrained against its
+neighbours in the open list. Segments overlap on closed intervals, obstacles on their
+open interior. Constraint generation is a public step that returns the constraints as
+data (Dwyer et al. 2006), so a layout engine can move nodes without changing the routing
+topology.
+
+The solver is exact and needs no LP: every constraint is a difference constraint
+`x_v - x_u >= w`. Per independent component of moving segments we
+
+1. find the largest integer gap `t` (capped by `max_separation`) such that every
+   segment-segment and segment-obstacle arc can have gap `t`, by binary search with a
+   Bellman-Ford feasibility test (2309.01671 maximises the sum of such gap variables with
+   an LP; one shared gap per component is the same objective for a single variable);
+2. if `t < separation`, retry with zero gap to obstacles (they may be touched);
+3. place every segment at the midpoint of its leftmost and rightmost feasible positions,
+   which is feasible (the feasible set is convex) and integral after rounding down.
+
+The result centres single segments in their alley and spreads bundles evenly. Wybrow et
+al. instead project desired positions (alley middles, or the corner a "U" bends around)
+onto the constraints with VPSC (quadratic programming); that mode is not implemented
+(open question). Every pass preserves the order of overlapping segments, and every moved
+segment sweeps an obstacle-free rectangle, so routes keep their topology (Marriott et
+al. 2014's notion of topology-preserving edge moves).
+
+## Pipeline (arXiv 2309.01671)
+
+`pipeline::draw` takes boxes and edges (multi-edges and self-loops allowed) and runs:
+
+1. **Port assignment.** The port sides follow the straight segment between the box
+   centres; when it leaves a side in its outer quarter, one port moves to the adjacent
+   side so the edge becomes an L bending away from the barycentre of the box centres.
+   Ports on a side are ordered by the circular order of their edges and spread evenly.
+   Self-loops get neighbouring ports on the least populated side.
+2. **Routing graph.** The OVG, or the paper's channel graph (channels between box pairs,
+   representative lines, contained channels dropped).
+3. **Routing** with bend-minimal shortest paths tracking the entry direction (A*
+   instead of the paper's Dijkstra; same optimum).
+4. **Path ordering and crossing reduction** as above.
+5. **Nudging** (the paper's constrained mode: boxes and ports fixed).
+
+The paper's full nudging mode, where boxes may grow and move, belongs to a layout engine
+and is out of scope; the exported constraints are its interface.
+
+## Hyperedges (Wybrow et al. 2012)
+
+A net with more than two ports is routed as a rectilinear Steiner tree over the
+"separated" OVG (each vertex split into a horizontal and a vertical copy joined by a
+bend-penalty edge), with Heuristic 1 (shortest path terminal forest, Kruskal over bridge
+edges, MTST; Long et al.) and Heuristic 2 (interleaved SPTF and MCST, committing a bridge
+when its cost is at most twice the SPTF frontier). The local improvements of section 3
+(merge parallel routes by moving junctions; shift unbalanced segments) follow. Hyperedge
+trees are segment sets, so ordering and nudging handle them like connectors.
+
+## Sleeve routing (arXiv 2605.17498)
+
+The free space is triangulated with an exact constrained Delaunay triangulation
+(incremental insertion with Lawson flips, then constraint recovery by flipping (Sloan),
+all predicates in `i128`; not checked against an original, the paper cites
+Domiter and Žalik). Obstacle sides are constraints, split at collinear input points.
+Dijkstra runs on the dual graph (portal-midpoint distances as integer costs), skipping
+triangles inside obstacles other than the source and target ones, and the funnel
+algorithm (Lee and Preparata; not checked against an original) pulls the path taut
+through the sleeve. Per the paper, routes are batched by a greedy vertex cover of the
+demand graph (one Dijkstra tree per cover vertex), a straight segment is tried first, and
+corner-hugging chain vertices at the endpoints are collapsed.
+
+## Poly-line routing (Wybrow et al. 2005)
+
+The visibility graph over obstacle corners and ports, with the "hidden region" pruning
+(a shortest path bends around a corner by less than 180 degrees), A* with the Euclidean
+lower bound, and the invisibility graph for incremental updates: every rejected
+corner-pair edge remembers one obstacle that blocks it, so removing an obstacle retests
+only its edges. Object removal reroutes only connectors whose lower bound through the
+freed region beats their current cost. Costs follow the thesis' formula
+`length + segment_penalty * bends + crossing_penalty * crossings`; the angle term
+`beta * a * log(a + 1) / 10` needs floats and is not implemented (open question).
+
+## Multi-objective (feature `multi-objective`)
+
+For one connector, with the other routes fixed, the Pareto front over
+`[length, bends, crossings]` via NAMOA*dr from `multiobjective-search` (path dependency,
+read-only), over the same `(vertex, heading)` state graph.
+
+## Papers
+
+Status: **checked** (rules compared with the original text in `papers-routing/`),
+**alternative** (a deliberate different method, named), **not checked** (the original was
+not available; implemented from secondary descriptions).
+
+| Paper | Used for | Status |
+|---|---|---|
+| Wybrow, Marriott, Stuckey, *Orthogonal Connector Routing*, GD 2009 | OVG definition and construction | checked; scan instead of sweep (shortcut) |
+| same | cost `f(length, bends)`, `(vertex, direction)` A* | checked; tighter bend estimate, no neighbour pruning, other tie-break |
+| same | ordering of shared edges, Theorems 3 and 4 | alternative (2309.01671 fixed directions); theorems tested |
+| same | nudging: separation constraints by scan line | checked |
+| same | nudging: VPSC projection to desired positions | alternative (max-gap + midpoint, exact); VPSC open |
+| Marriott, Stuckey, Wybrow, *Seeing Around Corners*, Diagrams 2014 | obstacle-hugging routes, 1-bend visibility graph | checked; lazy edges; default only if tests agree |
+| Wybrow, Marriott, Stuckey, *Orthogonal Hyperedge Routing*, Diagrams 2012 | hyperedge Heuristics 1 and 2, local improvement | checked |
+| Wybrow, Marriott, Stuckey, *Incremental Connector Routing*, GD 2005 | poly-line visibility graph, invisibility graph, removal pruning | checked |
+| Dwyer, Marriott, Wybrow, *Integrating Edge Routing into Force-Directed Layout*, GD 2006 | exported topology constraints, crossing counting on shared paths | checked (routing parts only) |
+| Wybrow, PhD thesis, 2008 | libavoid background, poly-line cost formula | checked (cost formula) |
+| Hegemann, Wolff, *A Simple Pipeline for Orthogonal Graph Drawing*, arXiv 2309.01671 | port assignment, channel graph, ordering directions, crossing reduction, nudging LP | checked; LP replaced by exact max-gap |
+| Gladisch et al., *Orthogonal Edge Routing for the EditLens*, arXiv 1612.05064 | incremental OVG update rules | checked; applied to the Wybrow OVG |
+| Nachmanson, Chen, *Browsing Large Graphs with Tile Pyramids and Sleeve Routing in the Browser*, arXiv 2605.17498 | sleeve routing, vertex cover batching, collapse | checked |
+| McMurchie, Ebeling, *PathFinder*, FPGA 1995 | negotiated congestion | not checked |
+| Pupyrev et al., metro-line crossing minimisation | path order comparator | not checked (via 2309.01671) |
+| Dwyer, Marriott, Stuckey, VPSC / *Fast node overlap removal*, GD 2005 | scan-line constraint generation | not checked (via Wybrow 2009) |
+| Lee and Preparata; Chazelle (funnel algorithm) | funnel | not checked |
+| Lawson; Sloan (Delaunay flips, constraint recovery) | CDT | not checked |
+| Long, Zhou, Memik, EBOARST (SPTF/MTST) | hyperedge Heuristic 1 | not checked (via Wybrow 2012) |
+
+## Milestones
+
+1. Geometry, routing graph, OVG, incremental OVG, independent route checker.
+2. Single connector: OVG A* with exact bend estimate, lexicographic objectives, brute-force
+   oracle; 1-bend visibility graph search (Marriott 2014), default if exact.
+3. Global routing: resources and capacities, PathFinder, crossing penalty, deterministic
+   order, invalidation reports for scene mutations (Wybrow 2005, Dwyer 2006).
+4. Post-processing: path ordering, crossing count and reduction, constraint generation,
+   exact difference-constraint nudging.
+5. Pipeline per arXiv 2309.01671: port assignment, channel routing graph, full run.
+6. Hyperedges (Wybrow 2012): separated OVG, Heuristics 1 and 2, local improvement.
+7. Sleeve routing: exact CDT, dual Dijkstra, funnel, vertex cover batching, collapse.
+8. Poly-line routing (Wybrow 2005): visibility and invisibility graphs, incremental
+   updates, removal pruning.
+9. Multi-objective Pareto routing behind `multi-objective`.
+
+The README's status list says which of these are done.
