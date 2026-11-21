@@ -18,7 +18,7 @@
 //!     end
 //! ```
 //!
-//! The constraints are plain data ([`constraints`]), so a layout engine can keep them
+//! The constraints are plain data ([`constraints`](fn@constraints)), so a layout engine can keep them
 //! while moving obstacles (Dwyer, Marriott and Wybrow 2006).
 
 mod constraints;
@@ -353,7 +353,7 @@ fn far_item(
 }
 
 /// The segments of the routes as `(route, axis, line coordinate)`, in the index order
-/// used by [`constraints`].
+/// used by [`constraints`](fn@constraints).
 #[must_use]
 pub fn segment_lines(graph: &RoutingGraph, routes: &[Route]) -> Vec<(usize, Axis, i32)> {
     let nets: Vec<Net> = routes.iter().map(|r| Net::from_route(graph, r)).collect();

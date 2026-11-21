@@ -22,7 +22,7 @@
 //! - [`Scene`]: obstacles and [`Port`]s with their orthogonal visibility graph
 //!   (Wybrow, Marriott and Stuckey 2009), updated incrementally as obstacles and ports
 //!   change. [`incremental`] reports which committed routes a change affects.
-//! - [`route`]: the optimal route of one connector under an [`Objective`] (length and
+//! - [`route`](fn@route): the optimal route of one connector under an [`Objective`] (length and
 //!   bends, exact lexicographic orders available), by A* over `(vertex, heading)`; the
 //!   1-bend visibility graph of Marriott et al. (2014) is available as [`Search::OneBend`].
 //! - [`global::route_all`]: many connectors with `PathFinder` negotiated congestion over

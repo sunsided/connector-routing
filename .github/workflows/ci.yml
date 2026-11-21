@@ -113,7 +113,7 @@ jobs:
     permissions:
       contents: read
     env:
-      RUSTDOCFLAGS: -D warnings
+      RUSTDOCFLAGS: -D warnings --html-in-header ${{ github.workspace }}/connector-routing/docs/mermaid.html
     defaults:
       run:
         working-directory: connector-routing
