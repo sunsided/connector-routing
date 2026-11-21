@@ -108,6 +108,11 @@ mod scene;
 mod search;
 pub mod sleeve;
 
+/// Doctests for the code examples in README.md (not part of the API).
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+mod readme_doctests {}
+
 pub use error::Error;
 pub use geom::{Axis, DirSet, Direction, MAX_COORD, Point, Rect, Side};
 pub use graph::{RoutingGraph, VertexId};

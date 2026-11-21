@@ -1,5 +1,13 @@
 # connector-routing
 
+[![crates.io](https://img.shields.io/crates/v/connector-routing.svg)](https://crates.io/crates/connector-routing)
+[![docs.rs](https://img.shields.io/docsrs/connector-routing)](https://docs.rs/connector-routing)
+[![CI](https://github.com/sunsided/connector-routing/actions/workflows/ci.yml/badge.svg)](https://github.com/sunsided/connector-routing/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/sunsided/connector-routing/graph/badge.svg)](https://codecov.io/gh/sunsided/connector-routing)
+[![MSRV](https://img.shields.io/crates/msrv/connector-routing)](https://crates.io/crates/connector-routing)
+[![License](https://img.shields.io/crates/l/connector-routing)](https://github.com/sunsided/connector-routing#license)
+[![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](https://github.com/rust-secure-code/safety-dance/)
+
 Global connector routing: many orthogonal connectors at once with bend, length and crossing costs, negotiated congestion and rip-up and reroute.
 
 Routes connectors around rectangular obstacles, as diagram editors, schematic tools and cable-plan generators need: optimal single routes, many routes negotiating channel capacity, crossing reduction, and final placement that separates shared stretches. All geometry is exact integer arithmetic; the crate is `no_std` with `alloc`.
@@ -24,7 +32,7 @@ Any-angle routing:
 - [x] Sleeve routing (arXiv 2605.17498): exact constrained Delaunay triangulation, dual-graph Dijkstra, funnel algorithm, vertex-cover batching, exits along walls between touching obstacles
 - [x] Incremental poly-line routing (Wybrow et al. 2005): visibility and invisibility graphs, rerouting reports, hidden-region pruning, segment, angle and crossing penalties
 
-See [`docs/design.md`](docs/design.md) for the models, the deviations from the papers that testing found, and the paper table.
+See [`docs/design.md`](https://github.com/sunsided/connector-routing/blob/main/docs/design.md) for the models, the deviations from the papers that testing found, and the paper table.
 
 ## Example
 
@@ -53,11 +61,25 @@ On 192 boxes and 300 connectors (`cargo bench --bench routing`): the visibility 
 
 Pre-release. The API is a draft and will change.
 
+## MSRV
+
+The minimum supported Rust version is 1.85 (`rust-version` in `Cargo.toml`). It is a
+signal, not a contract: raising it is a minor release, never a patch release. Tests and
+benches may need a newer Rust.
+
+## Contributing
+
+See [CONTRIBUTING.md](https://github.com/sunsided/connector-routing/blob/main/CONTRIBUTING.md).
+
 ## License
 
 Licensed under either of
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
-- MIT license ([LICENSE-MIT](LICENSE-MIT))
+- Apache License, Version 2.0 ([LICENSE-APACHE](https://github.com/sunsided/connector-routing/blob/main/LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](https://github.com/sunsided/connector-routing/blob/main/LICENSE-MIT))
 
 at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion
+in this work by you, as defined in the Apache-2.0 license, shall be dual licensed as above,
+without any additional terms or conditions.
