@@ -9,7 +9,8 @@ use connector_routing::sleeve::SleeveRouter;
 use connector_routing::{
     Connector, Objective, Point, Port, Rect, Scene, Search, nudge, pipeline, route,
 };
-use criterion::Criterion;
+use criterion::measurement::WallTime;
+use criterion::{BenchmarkGroup, Criterion};
 
 /// A grid of `cols x rows` boxes, 40 x 24 each, 80 apart.
 fn boxes(cols: i32, rows: i32) -> Vec<Rect> {
@@ -102,32 +103,7 @@ fn benches(c: &mut Criterion) {
         let all: Vec<Port> = ports.iter().flat_map(|&(a, b)| [a, b]).collect();
         b.iter(|| Scene::build(rects.iter().copied(), all.iter().copied()).unwrap());
     });
-    group.bench_function("single_route_ovg", |b| {
-        let c0 = connectors[0];
-        b.iter(|| {
-            route(
-                &scene,
-                c0.source,
-                c0.target,
-                Objective::default(),
-                Search::Ovg,
-            )
-            .unwrap()
-        });
-    });
-    group.bench_function("single_route_one_bend", |b| {
-        let c0 = connectors[0];
-        b.iter(|| {
-            route(
-                &scene,
-                c0.source,
-                c0.target,
-                Objective::default(),
-                Search::OneBend,
-            )
-            .unwrap()
-        });
-    });
+    single_routes(&mut group, &scene, connectors[0]);
     group.bench_function("route_all_300", |b| {
         b.iter(|| route_all(&scene, &connectors, &global::Config::default()).unwrap());
     });
@@ -161,6 +137,38 @@ fn benches(c: &mut Criterion) {
     group.finish();
 
     any_angle(c, &rects);
+}
+
+/// Single-connector searches for `connector`: A* over the OVG and the 1-bend graph.
+fn single_routes(
+    group: &mut BenchmarkGroup<'_, WallTime>,
+    scene: &Scene,
+    connector: Connector<connector_routing::PortId>,
+) {
+    group.bench_function("single_route_ovg", |b| {
+        b.iter(|| {
+            route(
+                scene,
+                connector.source,
+                connector.target,
+                Objective::default(),
+                Search::Ovg,
+            )
+            .unwrap()
+        });
+    });
+    group.bench_function("single_route_one_bend", |b| {
+        b.iter(|| {
+            route(
+                scene,
+                connector.source,
+                connector.target,
+                Objective::default(),
+                Search::OneBend,
+            )
+            .unwrap()
+        });
+    });
 }
 
 /// Sleeve and poly-line routing on the obstacles of the instance.
