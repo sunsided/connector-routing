@@ -249,8 +249,7 @@ jobs:
         with:
           tool: cargo-hack
       # Library only: dev-dependencies (criterion, proptest) need a newer Rust than users do.
-      # Default features only: `multi-objective` (multiobjective-search) needs Rust 1.86.
-      - run: cargo hack check --rust-version --workspace --ignore-private
+      - run: cargo hack check --rust-version --workspace --ignore-private --all-features
 
   # Baseline: the published 0.0.0 placeholder on crates.io.
   semver:
