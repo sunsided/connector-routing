@@ -77,6 +77,27 @@ impl Port {
     pub fn free(point: Point) -> Self {
         Self::new(point, DirSet::ALL)
     }
+
+    /// The interesting points the port adds to the visibility graph: its point, and for
+    /// each allowed direction `d` the point one unit away in `d` and its two
+    /// neighbours one unit to either side (its *stubs*).
+    ///
+    /// The stubs are not in Wybrow et al. (2009). Without them the graph can miss the
+    /// optimum when a port direction forces a turn right next to the port: the first or
+    /// last segment cannot shrink to nothing, so the segments after it need lines one
+    /// unit away, ahead of the port and beside it (found by the brute-force comparison).
+    pub fn interesting_points(&self) -> impl Iterator<Item = Point> + '_ {
+        let p = self.point;
+        core::iter::once(p).chain(self.directions.iter().flat_map(move |d| {
+            let (dx, dy) = d.delta();
+            let ahead = Point::new(p.x + dx, p.y + dy);
+            [
+                ahead,
+                Point::new(ahead.x + dy, ahead.y + dx),
+                Point::new(ahead.x - dy, ahead.y - dx),
+            ]
+        }))
+    }
 }
 
 /// A slot arena with stable indices and reuse of freed slots.
@@ -162,6 +183,11 @@ pub struct Scene {
     ports: Arena<Port>,
     /// How many obstacle corners and ports sit at each interesting point.
     generators: BTreeMap<Point, u32>,
+    /// The routing frame: the bounding box of the interesting points grown by one unit.
+    /// Its corners are extra interesting points, so routes can leave the bounding box
+    /// (a port on the outer side of the outermost obstacle must). `None` without
+    /// interesting points.
+    frame: Option<Rect>,
     /// The interesting segments and the visibility graph.
     segments: Segments,
 }
@@ -197,11 +223,15 @@ impl Scene {
         for port in ports {
             check_port(&port)?;
             scene.ports.insert(port);
-            *scene.generators.entry(port.point).or_default() += 1;
+            for p in port.interesting_points() {
+                *scene.generators.entry(p).or_default() += 1;
+            }
         }
 
         let rects = scene.rects();
-        let points: Vec<Point> = scene.generators.keys().copied().collect();
+        scene.frame = frame_of(&scene.generators);
+        let mut points: Vec<Point> = scene.generators.keys().copied().collect();
+        points.extend(scene.frame.iter().flat_map(Rect::corners));
         scene.segments.build(&rects, &points);
 
         Ok(scene)
@@ -324,7 +354,9 @@ impl Scene {
     pub fn add_port(&mut self, port: Port) -> Result<PortId, Error> {
         check_port(&port)?;
         let id = PortId(self.ports.insert(port));
-        self.add_point_generator(port.point);
+        for p in port.interesting_points() {
+            self.add_point_generator(p);
+        }
 
         Ok(id)
     }
@@ -336,7 +368,9 @@ impl Scene {
     /// [`Error::UnknownPort`] if `id` names no port.
     pub fn remove_port(&mut self, id: PortId) -> Result<Port, Error> {
         let port = self.ports.remove(id.0).ok_or(Error::UnknownPort)?;
-        self.remove_point_generator(port.point);
+        for p in port.interesting_points() {
+            self.remove_point_generator(p);
+        }
 
         Ok(port)
     }
@@ -356,10 +390,43 @@ impl Scene {
         );
 
         let rects = self.rects();
-        affected.retain(|p| self.generators.contains_key(p));
+        let frame: Vec<Point> = self.frame.iter().flat_map(Rect::corners).collect();
+        affected.retain(|p| self.generators.contains_key(p) || frame.contains(p));
         affected.sort_unstable();
         affected.dedup();
         self.segments.restore(&rects, &affected);
+        self.refresh_frame();
+    }
+
+    /// The routing frame: the bounding box of every obstacle corner and port, grown by
+    /// one unit on each side. `None` for an empty scene.
+    ///
+    /// Its corners are interesting points of the graph. One unit suffices: clamping an
+    /// optimal route into the frame never makes it longer or adds bends, and a route
+    /// needs no line further out (checked against brute force).
+    #[must_use]
+    pub fn frame(&self) -> Option<Rect> {
+        self.frame
+    }
+
+    /// Recomputes the routing frame and replaces its corner generators if it changed.
+    fn refresh_frame(&mut self) {
+        let frame = frame_of(&self.generators);
+        if frame == self.frame {
+            return;
+        }
+
+        // An old corner can have become a real interesting point when the box grew.
+        for corner in self.frame.iter().flat_map(Rect::corners) {
+            if !self.generators.contains_key(&corner) {
+                self.segments.drop_generator(corner);
+            }
+        }
+
+        self.frame = frame;
+        let rects = self.rects();
+        let corners: Vec<Point> = frame.iter().flat_map(Rect::corners).collect();
+        self.segments.restore(&rects, &corners);
     }
 
     /// Counts one more use of each point as an interesting point.
@@ -388,6 +455,8 @@ impl Scene {
             let rects = self.rects();
             self.segments.restore(&rects, &[p]);
         }
+
+        self.refresh_frame();
     }
 
     /// Removes one use of `p`; drops it from its segments when the last use goes.
@@ -396,7 +465,23 @@ impl Scene {
         if !self.generators.contains_key(&p) {
             self.segments.drop_generator(p);
         }
+
+        self.refresh_frame();
     }
+}
+
+/// The bounding box of the interesting points grown by one unit, or `None` if there are
+/// none.
+fn frame_of(generators: &BTreeMap<Point, u32>) -> Option<Rect> {
+    let mut points = generators.keys();
+    let first = *points.next()?;
+    let (mut lo, mut hi) = (first, first);
+    for p in points {
+        lo = Point::new(lo.x.min(p.x), lo.y.min(p.y));
+        hi = Point::new(hi.x.max(p.x), hi.y.max(p.y));
+    }
+
+    Some(Rect::new(lo.x - 1, lo.y - 1, hi.x + 1, hi.y + 1))
 }
 
 /// Checks that both corners of `rect` are in range.

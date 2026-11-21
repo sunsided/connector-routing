@@ -71,8 +71,19 @@ along each segment.
 This is the paper's definition: the paper takes segments between pairs of mutually
 visible interesting points and nodes in `X_I x Y_I` visible from an interesting point on
 both axes, which is the same set of nodes and the same nearest-neighbour edges (checked
-against the original). Unbounded segments need no clipping, since every intersection
-lies within the bounding box of the interesting points.
+against the original, and tested against a direct implementation of the definition).
+
+Two additions, both found by the brute-force comparison below, make the graph exact
+when port directions constrain the route (the paper's "shrink each segment onto the
+graph" argument fails when the first or last segment would shrink to nothing):
+
+- **Routing frame.** The corners of the bounding box of all interesting points, grown
+  by one unit, are interesting too. A port on the outer side of the outermost obstacle,
+  pointing outwards, needs a line beyond every other interesting point.
+- **Port stubs.** For each allowed direction `d` of a port at `p`, the points `p + d`
+  and `p + d ± e` (`e` perpendicular to `d`) are interesting. A route forced to turn
+  right after leaving a port, or to hook back into it, needs lines one unit ahead of and
+  beside the port.
 
 Two maximal segments on the same line are either equal or disjoint (they are separated
 by an obstacle of positive width), so a segment is keyed by its line and start and
@@ -126,18 +137,21 @@ The search runs on `heuristic_search::a_star` (a path dependency on the sibling 
 used read-only). The heuristic is `length_weight * manhattan + bend_penalty * b`, where
 `b` is the exact minimum number of bends from `(p, heading)` to the target with a valid
 arrival heading in the obstacle-free plane. This is a shortest-path distance in a
-relaxation, hence consistent. It is never weaker than the paper's `s_d` table and
-strictly tighter in four cases (checked against the original):
+relaxation, hence consistent. It differs from the paper's `s_d` table (checked against
+the original) in these cases:
 
 | case (heading `D`, arrival `A`) | paper `s_d` | ours |
 |---|---|---|
 | `D` perpendicular to `A`, target ahead in `D` but not on the side `A` points to | 1 | 3 |
 | `D = reverse(A)`, target on the line ahead | 2 | 4 |
 | `D = reverse(A)`, at the target | 2 | 4 |
-| `D = A`, at the target | (case 4 in the paper) | 0 |
+| `D = A`, at the target | 4 | 0 |
+| `D` perpendicular to `A`, target exactly beside the current vertex on the side `A` points to | 3 | 1 |
 
 A unit test enumerates the free-space value by breadth-first search on a grid and
-compares it with the closed form.
+compares it with the closed form. As we read the paper's table, its case 3 gives 3 for a
+target exactly on the perpendicular line through the current vertex (`D0` not in
+`dirns`), where one bend in place suffices; our value is 1 there.
 
 Deviations from the paper: the paper prunes left/right neighbours whose visibility line
 "neither passes right by an obstacle nor contains the target"; we keep every neighbour
@@ -161,21 +175,31 @@ same length and bends, whose intermediate segments each pass a supporting corner
 searching over 1-bend edges between supports is exact for the length-and-bends cost.
 
 We generate the 1-bend successors lazily by walking the OVG rays from a node, so the
-quadratic edge set is never stored. Whether it becomes the default single-connector
-search is decided by tests: a property test compares its cost with the OVG A* and with a
-brute-force grid search on random scenes, including ports on corners, restricted port
-directions, and touching and overlapping obstacles. It does not apply to global routing:
-congestion and crossing terms break the equivalence of topologically equivalent routes,
-so PathFinder searches the OVG.
+quadratic edge set is never stored. Two details the paper leaves implicit are needed even
+for simple cases: the second leg of an edge may have zero length (the support vertex can
+be the bend point itself, as in a U-turn around a box), and a node reached that way must
+not bend again in place. Nodes next to the ports cover turns that port directions force
+without a supporting obstacle.
+
+**Result of the test (not the default).** The property test against brute force found
+instances where the 1-bend search returns a route with two more bends than the optimum
+(touching obstacles with side ports; port directions forcing unsupported turns in free
+space). Its routes are always valid and never cheaper than the optimum, and it falls back
+to the OVG search when it finds nothing. So `Search::Ovg` is the default and
+`Search::OneBend` is an opt-in speed-up. Theorem 1 covers pure length-and-bends only in
+any case; PathFinder searches the OVG.
 
 ### Brute-force oracle
 
-Because all coordinates are integers, an optimal orthogonal route can be slid onto
-integer lines (every segment can be moved onto the line of an interesting point without
-growing), and clamping a route into the bounding box of all interesting points never
-increases its length or bends. Tests therefore search the full unit grid of the
-bounding box (plus padding, to confirm the clamping argument) with the same
-`(point, heading)` semantics, and compare the optimal cost.
+Tests search the full unit grid of the bounding box (plus padding, to confirm that
+optimal routes stay within one unit of it) with the same `(point, heading)` semantics,
+and compare the optimal cost. Exactness is asserted on inputs on a lattice of spacing 4
+(the unit grid is finer, so routes may use lines the graph does not have): ports with
+free directions anywhere, and ports on obstacle sides pointing outwards, with touching
+and overlapping obstacles. With arbitrary direction sets on the unit lattice, a port stub
+can coincide with an obstacle side and a route squeezing through a one-unit gap needs
+lines between the graph's; there the test asserts validity and that the route is never
+cheaper than brute force.
 
 ## Global routing
 
@@ -345,11 +369,12 @@ not available; implemented from secondary descriptions).
 | Paper | Used for | Status |
 |---|---|---|
 | Wybrow, Marriott, Stuckey, *Orthogonal Connector Routing*, GD 2009 | OVG definition and construction | checked; scan instead of sweep (shortcut) |
-| same | cost `f(length, bends)`, `(vertex, direction)` A* | checked; tighter bend estimate, no neighbour pruning, other tie-break |
+| same | OVG definition, exactness under port directions | checked; frame and port stubs added (regression tests) |
+| same | cost `f(length, bends)`, `(vertex, direction)` A* | checked; exact bend estimate (paper's case 3 overestimates as read), no neighbour pruning, other tie-break |
 | same | ordering of shared edges, Theorems 3 and 4 | alternative (2309.01671 fixed directions); theorems tested |
 | same | nudging: separation constraints by scan line | checked |
 | same | nudging: VPSC projection to desired positions | alternative (max-gap + midpoint, exact); VPSC open |
-| Marriott, Stuckey, Wybrow, *Seeing Around Corners*, Diagrams 2014 | obstacle-hugging routes, 1-bend visibility graph | checked; lazy edges; default only if tests agree |
+| Marriott, Stuckey, Wybrow, *Seeing Around Corners*, Diagrams 2014 | obstacle-hugging routes, 1-bend visibility graph | checked; lazy edges; not exact in tests, so opt-in, not default |
 | Wybrow, Marriott, Stuckey, *Orthogonal Hyperedge Routing*, Diagrams 2012 | hyperedge Heuristics 1 and 2, local improvement | checked |
 | Wybrow, Marriott, Stuckey, *Incremental Connector Routing*, GD 2005 | poly-line visibility graph, invisibility graph, removal pruning | checked |
 | Dwyer, Marriott, Wybrow, *Integrating Edge Routing into Force-Directed Layout*, GD 2006 | exported topology constraints, crossing counting on shared paths | checked (routing parts only) |

@@ -28,7 +28,11 @@ fn two_boxes() {
     assert!(points.contains(&Point::new(6, 0)));
     assert!(points.contains(&Point::new(6, 4)));
     assert!(!points.contains(&Point::new(2, 2)));
-    assert!(edges.contains(&(Point::new(4, 2), Point::new(6, 2))));
+    assert!(edges.contains(&(Point::new(4, 2), Point::new(5, 2))));
+    assert!(
+        points.contains(&Point::new(7, 2)),
+        "the port's stubs are interesting"
+    );
     assert_eq!(
         (points, edges),
         naive_ovg(&rects, &interesting(&rects, &ports))

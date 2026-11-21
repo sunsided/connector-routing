@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc eaddba87bdbe341337c0f3a3ed7f7be35797449fd824aea8be6a10bac3a7db26 # shrinks to edits = [Add(Rect { min: Point { x: 0, y: 0 }, max: Point { x: 1, y: 1 } }), Move(0, Rect { min: Point { x: 15, y: 0 }, max: Point { x: 16, y: 1 } }), Add(Rect { min: Point { x: 15, y: 15 }, max: Point { x: 16, y: 22 } }), AddPort(Port { point: Point { x: 14, y: 23 }, directions: {Right} })]
