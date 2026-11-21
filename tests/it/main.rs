@@ -4,5 +4,6 @@ mod crossings;
 mod global;
 mod nudging;
 mod ovg;
+mod pipeline;
 mod single;
 mod support;

@@ -343,8 +343,10 @@ ones.
    side so the edge becomes an L bending away from the barycentre of the box centres.
    Ports on a side are ordered by the circular order of their edges and spread evenly.
    Self-loops get neighbouring ports on the least populated side.
-2. **Routing graph.** The OVG, or the paper's channel graph (channels between box pairs,
-   representative lines, contained channels dropped).
+2. **Routing graph.** The OVG. The paper's channel graph (channels between box pairs,
+   representative lines, contained channels dropped) is not implemented: it is a
+   sparser graph whose routes the OVG also contains, so it would only trade quality for
+   speed (open question).
 3. **Routing** with bend-minimal shortest paths tracking the entry direction (A*
    instead of the paper's Dijkstra; same optimum).
 4. **Path ordering and crossing reduction** as above.

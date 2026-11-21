@@ -18,6 +18,7 @@ mod graph;
 pub mod incremental;
 mod nets;
 pub mod nudge;
+pub mod pipeline;
 mod route;
 mod scene;
 mod search;
