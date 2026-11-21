@@ -27,8 +27,9 @@ applyTo: "**/*.rs"
   `i64` or `i128` without overflow, and costs saturate or return `Error::CostOverflow`.
   No floating point in routing decisions. Reject changes that weaken this.
 - Routes never enter an obstacle's open interior; `check` validates that independently.
-  Tests and the fuzz targets (`route_scene`, `sleeve_route`) check every route they get
-  with `check::orthogonal` or `check::polyline`.
+  Tests and the fuzz targets (`route_scene`, `sleeve_route`, `pipeline_draw`,
+  `hyperedge_tree`, `polyline_route`) check every route they get with `check::orthogonal`
+  or `check::polyline`.
 - Optimality claims are tested against brute force (`tests/it/support.rs`). A change that
   makes a search inexact must say so in its docs and in `docs/design.md`.
 - Public API changes go with a matching update to the README "Scope and status" list and
