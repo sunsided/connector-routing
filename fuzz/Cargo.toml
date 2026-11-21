@@ -27,6 +27,27 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "pipeline_draw"
+path = "fuzz_targets/pipeline_draw.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "hyperedge_tree"
+path = "fuzz_targets/hyperedge_tree.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "polyline_route"
+path = "fuzz_targets/polyline_route.rs"
+test = false
+doc = false
+bench = false
+
 # A separate workspace, kept out of the root one (cargo-fuzz needs nightly).
 [workspace]
 
