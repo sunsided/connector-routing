@@ -168,16 +168,17 @@ impl Projection<'_> {
             .collect();
         let fixed = |side: &[usize]| side.iter().any(|&n| self.desired[n].is_none());
         let residual = |side: &[usize]| {
-            let (pn, pd) = self.position(block);
+            let (pos_num, pos_den) = self.position(block);
             let num: i128 = side
                 .iter()
                 .map(|&n| {
-                    pn + (i128::from(self.offset[n])
-                        - i128::from(self.desired[n].expect("free node")))
-                        * pd
+                    pos_num
+                        + (i128::from(self.offset[n])
+                            - i128::from(self.desired[n].expect("free node")))
+                            * pos_den
                 })
                 .sum();
-            (num, pd)
+            (num, pos_den)
         };
         match (fixed(&right), fixed(&left)) {
             (false, _) => Some(residual(&right)),
