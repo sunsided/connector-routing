@@ -455,4 +455,29 @@ not available; implemented from secondary descriptions).
    updates, removal pruning.
 9. Multi-objective Pareto routing behind `multi-objective`.
 
-The README's status list says which of these are done.
+All nine are implemented; the README's status list names the parts left out.
+
+## Open questions (with the defaults taken)
+
+- **1-bend search as default.** Not exact in tests (a slit between touching boxes), and
+  slower than the OVG search in the lazy form here. Default: OVG search; 1-bend opt-in.
+- **Port stubs and frame.** Additions to the paper's graph, needed for exactness with
+  port directions. Default: on; they add up to nine interesting points per port.
+- **Nudging placement.** Max common gap plus midpoint (spreading, 2309.01671) instead
+  of VPSC projection to desired positions (Wybrow 2009). Default: separation 4, spread
+  at most 8; `max_separation = u32::MAX` spreads over whole channels.
+- **Intransitive orders** with ports inside shared stretches can cost a crossing.
+  Default: deterministic cycle break.
+- **Channel capacity model.** `(slab, gap)` resources with `h / separation + 1` tracks.
+  Necessary, not sufficient, for full separation. Default as described.
+- **Default costs.** Global routing uses length 1, bend 10, crossing 20, 40 iterations;
+  single routes default to shortest, then fewest bends. These are scale dependent.
+- **Fixed-point Euclidean costs** (`2^8` per unit for poly-lines, integer square roots
+  for sleeves). Exact geometry, approximate comparison of nearly equal lengths.
+- **Overlapping obstacles** are allowed for orthogonal routing and poly-lines, rejected
+  for sleeve routing (the CDT needs non-crossing constraints).
+- **Not built:** the channel routing graph of 2309.01671, its full nudging mode (box
+  growth), the hyperedge local improvements, the poly-line angle penalty and hidden-region
+  pruning, sleeve vertex collapse and edge hints.
+- **Publishing.** `heuristic-search` and `multiobjective-search` are path dependencies
+  with a version and must be published first.
