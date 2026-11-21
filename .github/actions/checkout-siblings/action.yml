@@ -1,0 +1,38 @@
+# Cargo needs every `path = "../x"` dependency on disk, even with a `version`. This checks the
+# repository out into $GITHUB_WORKSPACE/connector-routing and the unreleased siblings next to
+# it, so `../heuristic-search` and `../multiobjective-search` resolve. Jobs call it as
+# `$/.github/actions/checkout-siblings` (self-repository syntax, resolved without a prior
+# checkout) and set `defaults.run.working-directory: connector-routing`.
+# Remove a sibling here once its dependency moves to a crates.io release.
+name: Check out with sibling crates
+description: Checks out connector-routing and the unreleased sibling crates it depends on by path.
+
+inputs:
+  token:
+    description: Token with read access to the private sibling repositories (secrets.SIBLING_REPOS_TOKEN).
+    required: true
+  fetch-depth:
+    description: History depth of the connector-routing checkout (0 for all, as release-plz needs).
+    default: "1"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        path: connector-routing
+        fetch-depth: ${{ inputs.fetch-depth }}
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: sunsided/heuristic-search
+        path: heuristic-search
+        token: ${{ inputs.token }}
+        persist-credentials: false
+    # Optional dependency (feature `multi-objective`); CI builds with --all-features.
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: sunsided/multiobjective-search
+        path: multiobjective-search
+        token: ${{ inputs.token }}
+        persist-credentials: false
