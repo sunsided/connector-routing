@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use connector_routing::hyperedge::{Heuristic, Tree, route as tree_route};
+use connector_routing::hyperedge::{Heuristic, Tree, route as tree_route, route_with};
 use connector_routing::{
     Objective, Point, Port, Rect, Scene, Search, VertexId, check, nudge, route,
 };
@@ -108,6 +108,13 @@ proptest! {
 
         for heuristic in [Heuristic::Sequential, Heuristic::Interleaved] {
             let tree = tree_route(&scene, &ids, objective, heuristic).unwrap();
+            let raw = route_with(&scene, &ids, objective, heuristic, false).unwrap();
+            prop_assert!(tree.length <= raw.length, "improvement never makes the tree longer");
+            let weighted = Objective::Weighted { length: 1, bend: 7 };
+            let better = route_with(&scene, &ids, weighted, heuristic, true).unwrap();
+            let plain = route_with(&scene, &ids, weighted, heuristic, false).unwrap();
+            prop_assert!(better.length + 7 * u64::from(better.bends) <= plain.length + 7 * u64::from(plain.bends));
+            prop_assert!(connects(&better, &terminals));
             prop_assert!(connects(&tree, &terminals), "{:?} connects", heuristic);
             prop_assert!(tree.length <= mst, "{:?}: {} <= {}", heuristic, tree.length, mst);
             for &(a, b) in &tree.edges {
@@ -136,4 +143,52 @@ fn two_terminals_are_a_shortest_path() {
         let tree = tree_route(&scene, &ids, objective, heuristic).unwrap();
         assert_eq!(tree.length, shortest.length);
     }
+}
+
+/// The improvement does apply: a comb whose trunk has two branches above and one below
+/// moves up to the upper branches' ends, where both vanish.
+#[test]
+fn shifting_shortens_an_unbalanced_trunk() {
+    let ports = [(0, 20), (20, 20), (10, -20)].map(|(x, y)| Port::free(Point::new(x, y)));
+    // Lines at y = 0 for the hand-drawn trunk.
+    let extra = [(0, 0), (20, 0), (10, 0)].map(|(x, y)| Port::free(Point::new(x, y)));
+    let scene = Scene::build([], ports.into_iter().chain(extra)).unwrap();
+    let ids: Vec<_> = scene.ports().map(|(id, _)| id).collect();
+    let graph = scene.graph();
+    let walk = |pts: &[(i32, i32)]| {
+        let mut edges = Vec::new();
+        for w in pts.windows(2) {
+            let (from, to) = (Point::new(w[0].0, w[0].1), Point::new(w[1].0, w[1].1));
+            let dir = connector_routing::Direction::between(from, to).unwrap();
+            let mut v = graph.vertex_at(from).unwrap();
+            while graph.point(v) != to {
+                let next = graph.neighbor(v, dir).unwrap();
+                edges.push(if graph.point(v) < graph.point(next) {
+                    (v, next)
+                } else {
+                    (next, v)
+                });
+                v = next;
+            }
+        }
+        edges
+    };
+    let mut edges = walk(&[(0, 20), (0, 0), (20, 0), (20, 20)]);
+    edges.extend(walk(&[(10, 0), (10, -20)]));
+    edges.sort();
+    let comb = Tree {
+        edges,
+        length: 80,
+        bends: 3,
+        net: connector_routing::Net::default(),
+    };
+    let objective = Objective::Weighted { length: 1, bend: 1 };
+    let better =
+        connector_routing::hyperedge::improve(&scene, &comb, &ids[..3], objective).unwrap();
+    // The trunk moves to y = 20: 20 along the top, 40 down to (10, -20).
+    assert_eq!(better.length, 60);
+    assert!(connects(
+        &better,
+        &[ids[0], ids[1], ids[2]].map(|id| scene.port_vertex(id).unwrap())
+    ));
 }

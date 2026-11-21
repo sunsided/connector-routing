@@ -14,9 +14,9 @@
 //!   frontier, the two sub-routes it joins merge, and the forest regrows from the merged
 //!   sub-route at cost zero, so shared segments are discounted.
 //!
-//! Afterwards non-terminal leaves are pruned. The paper's local improvements (moving
-//! junctions and shifting segments) are left to nudging, which centres the tree's
-//! segments in their channels.
+//! Afterwards non-terminal leaves are pruned and the paper's local improvement runs:
+//! unbalanced segments shift towards the side with more diverging branches (see
+//! `improve`), which never makes the tree worse.
 
 use alloc::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use alloc::vec::Vec;
@@ -28,6 +28,8 @@ use crate::graph::{RoutingGraph, VertexId};
 use crate::nets::Net;
 use crate::scene::{PortId, Scene};
 use crate::search::{Objective, Weights};
+
+mod improve;
 
 /// Which construction to use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -148,6 +150,21 @@ pub fn route(
     objective: Objective,
     heuristic: Heuristic,
 ) -> Result<Tree, Error> {
+    route_with(scene, ports, objective, heuristic, true)
+}
+
+/// [`route`], with the local improvement (segment shifting) switched on or off.
+///
+/// # Errors
+///
+/// As [`route`].
+pub fn route_with(
+    scene: &Scene,
+    ports: &[PortId],
+    objective: Objective,
+    heuristic: Heuristic,
+    improve: bool,
+) -> Result<Tree, Error> {
     let graph = scene.graph();
     let weights = objective.weights(graph)?;
     let mut terminals: BTreeMap<VertexId, DirSet> = BTreeMap::new();
@@ -174,32 +191,59 @@ pub fn route(
     }
     .ok_or(Error::NoRoute { connector: 0 })?;
 
-    Ok(finish(graph, &separated, &edges))
+    Ok(finish(
+        graph,
+        &separated,
+        &edges,
+        improve.then_some(weights),
+    ))
 }
 
-/// Builds the tree from the separated edges it uses, pruning non-terminal leaves.
-fn finish(graph: &RoutingGraph, separated: &Separated<'_>, edges: &BTreeSet<(Node, Node)>) -> Tree {
-    let mut graph_edges: BTreeSet<(VertexId, VertexId)> = BTreeSet::new();
-    for &(a, b) in edges {
-        let (va, vb) = (vertex(a), vertex(b));
-        if va != vb {
-            let (lo, hi) = if graph.point(va) < graph.point(vb) {
-                (va, vb)
-            } else {
-                (vb, va)
-            };
-            graph_edges.insert((lo, hi));
-        }
+/// Improves any tree over the graph of `scene` (for example one drawn by a user, as
+/// in the paper's semi-automatic routing) by unbalanced segment shifts. `terminals` are
+/// the ports the tree must keep. The result is never more expensive under `objective`.
+///
+/// # Errors
+///
+/// [`Error::UnknownPort`] or [`Error::PortBlocked`] for a bad terminal,
+/// [`Error::CostOverflow`] for the objective.
+pub fn improve(
+    scene: &Scene,
+    tree: &Tree,
+    terminals: &[PortId],
+    objective: Objective,
+) -> Result<Tree, Error> {
+    let graph = scene.graph();
+    let weights = objective.weights(graph)?;
+    let mut ends: BTreeMap<VertexId, DirSet> = BTreeMap::new();
+    for &id in terminals {
+        let port = scene.port(id).ok_or(Error::UnknownPort)?;
+        let v = scene
+            .port_vertex(id)
+            .ok_or(Error::PortBlocked(port.point))?;
+        *ends.entry(v).or_default() |= port.directions;
     }
 
-    prune_leaves(&mut graph_edges, &separated.terminals);
+    let mut edges: improve::Edges = tree.edges.iter().copied().collect();
+    let keep: Vec<VertexId> = ends.keys().copied().collect();
+    improve::improve(graph, &mut edges, &keep, weights, 1000);
+
+    Ok(from_edges(graph, edges, keep))
+}
+
+/// The [`Tree`] of a graph edge set with the given terminals.
+fn from_edges(
+    graph: &RoutingGraph,
+    edges: BTreeSet<(VertexId, VertexId)>,
+    terminals: Vec<VertexId>,
+) -> Tree {
     let mut net = Net::default();
-    for &(a, b) in &graph_edges {
+    for &(a, b) in &edges {
         net.add_path(graph, &[a, b]);
     }
 
-    net.terminals = separated.terminals.keys().copied().collect();
-    let length = graph_edges
+    net.terminals = terminals;
+    let length = edges
         .iter()
         .map(|&(a, b)| graph.point(a).manhattan(graph.point(b)))
         .sum();
@@ -214,11 +258,44 @@ fn finish(graph: &RoutingGraph, separated: &Separated<'_>, edges: &BTreeSet<(Nod
         .count();
 
     Tree {
-        edges: graph_edges.into_iter().collect(),
+        edges: edges.into_iter().collect(),
         length,
         bends: u32::try_from(bends).unwrap_or(u32::MAX),
         net,
     }
+}
+
+/// Builds the tree from the separated edges it uses, pruning non-terminal leaves.
+fn finish(
+    graph: &RoutingGraph,
+    separated: &Separated<'_>,
+    edges: &BTreeSet<(Node, Node)>,
+    improve: Option<Weights>,
+) -> Tree {
+    let mut graph_edges: BTreeSet<(VertexId, VertexId)> = BTreeSet::new();
+    for &(a, b) in edges {
+        let (va, vb) = (vertex(a), vertex(b));
+        if va != vb {
+            let (lo, hi) = if graph.point(va) < graph.point(vb) {
+                (va, vb)
+            } else {
+                (vb, va)
+            };
+            graph_edges.insert((lo, hi));
+        }
+    }
+
+    prune_leaves(&mut graph_edges, &separated.terminals);
+    if let Some(weights) = improve {
+        let terminals: Vec<VertexId> = separated.terminals.keys().copied().collect();
+        improve::improve(graph, &mut graph_edges, &terminals, weights, 1000);
+    }
+
+    from_edges(
+        graph,
+        graph_edges,
+        separated.terminals.keys().copied().collect(),
+    )
 }
 
 /// Removes leaves that are not terminals until none is left.

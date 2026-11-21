@@ -379,9 +379,14 @@ edges, MTST; Long et al.) and Heuristic 2 (interleaved SPTF and MCST, committing
 when its cost is at most twice the SPTF frontier, regrowing from the merged sub-route at
 cost zero). Stale bridges after a merge are recognised by recomputing their cost. Port
 directions restrict the separated edges at terminals, and non-terminal leaves are pruned.
-The local improvements of section 3 (moving junctions to merge parallel routes; shifting
-unbalanced segments) are not implemented; nudging centres the tree's segments instead
-(open question). Hyperedge trees are edge sets (`Net`), so ordering and nudging handle
+The local improvement of section 3 shifts a straight run of the tree that holds no
+terminal towards the side with more diverging branches, up to the end of the shortest of
+them, where it vanishes with its bend (this also merges parallel routes, the paper's
+first transformation). A shift is kept only if the result is still a tree over graph
+edges and strictly cheaper, so improvement never makes a tree worse; `hyperedge::improve`
+also takes trees from elsewhere (the paper's semi-automatic routing). On random scenes
+the heuristics' trees rarely leave a terminal-free unbalanced run, so the gain shows
+mostly on hand-drawn trees (tested on a comb). Hyperedge trees are edge sets (`Net`), so ordering and nudging handle
 them like connectors; shape constraints cover branches attached in the middle of a run.
 Tests check connectivity before and after nudging, obstacle avoidance, and the bound by
 the minimum spanning tree of the pairwise shortest routes.
@@ -439,7 +444,7 @@ not available; implemented from secondary descriptions).
 | same | nudging: separation constraints by scan line | checked |
 | same | nudging: VPSC projection to desired positions | alternative (max-gap + midpoint, exact); VPSC open |
 | Marriott, Stuckey, Wybrow, *Seeing Around Corners*, Diagrams 2014 | obstacle-hugging routes, 1-bend visibility graph | checked; lazy edges; not exact in tests, so opt-in, not default |
-| Wybrow, Marriott, Stuckey, *Orthogonal Hyperedge Routing*, Diagrams 2012 | hyperedge Heuristics 1 and 2 (Fig. 6) | checked; local improvements not built (pruning and nudging instead) |
+| Wybrow, Marriott, Stuckey, *Orthogonal Hyperedge Routing*, Diagrams 2012 | hyperedge Heuristics 1 and 2 (Fig. 6), local improvement | checked; segment shifting subsumes junction moving |
 | Wybrow, Marriott, Stuckey, *Incremental Connector Routing*, GD 2005 | poly-line visibility graph, invisibility graph, removal pruning | checked |
 | Dwyer, Marriott, Wybrow, *Integrating Edge Routing into Force-Directed Layout*, GD 2006 | exported topology constraints, crossing counting on shared paths | checked (routing parts only) |
 | Wybrow, PhD thesis, 2008 | libavoid background, poly-line cost formula | checked (cost formula) |
@@ -464,8 +469,7 @@ not available; implemented from secondary descriptions).
    exact difference-constraint nudging.
 5. Pipeline per arXiv 2309.01671: port assignment, full run (channel routing graph not
    built).
-6. Hyperedges (Wybrow 2012): separated OVG, Heuristics 1 and 2 (local improvements not
-   built).
+6. Hyperedges (Wybrow 2012): separated OVG, Heuristics 1 and 2, local improvement.
 7. Sleeve routing: exact CDT, dual Dijkstra, funnel, vertex cover batching.
 8. Poly-line routing (Wybrow 2005): visibility and invisibility graphs, incremental
    updates, removal pruning.
@@ -495,7 +499,7 @@ README's status list.
 - **Overlapping obstacles** are allowed for orthogonal routing and poly-lines, rejected
   for sleeve routing (the CDT needs non-crossing constraints).
 - **Not built:** the channel routing graph of 2309.01671, its full nudging mode (box
-  growth), the hyperedge local improvements, the poly-line angle penalty and hidden-region
+  growth), the poly-line angle penalty and hidden-region
   pruning, sleeve vertex collapse and edge hints.
 - **Publishing.** `heuristic-search` and `multiobjective-search` are path dependencies
   with a version and must be published first.
