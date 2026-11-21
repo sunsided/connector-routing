@@ -27,8 +27,6 @@ applyTo: ".github/workflows/**,Taskfile.dist.yaml,**/Taskfile.dist.yaml,.pre-com
 - `no-std` mirrors `task build:no-std`: the library for `thumbv7em-none-eabihf`, with
   default features and with `--all-features`. The crate is `no_std` plus `alloc`; do not
   drop either build.
-- zizmor's `self-repository` audit is disabled in `.github/zizmor.yml`: actionlint does not
-  accept the `$/` form yet. Re-enable it once actionlint does.
 - `msrv` checks the library only (`cargo hack check --rust-version`, no `--all-targets`):
   dev-dependencies may need a newer Rust. Do not add `--all-targets` back. It checks with
   `--all-features`, so `multi-objective` (multiobjective-search) is covered as well.
