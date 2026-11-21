@@ -14,6 +14,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
+use crate::error::Error;
 use crate::geom::{Point, Rect};
 
 /// "No triangle" in [`Triangle::neighbors`].
@@ -71,7 +72,16 @@ fn in_circle(a: Point, b: Point, c: Point, d: Point) -> i128 {
 impl Cdt {
     /// Triangulates `frame` with `points` inside or on it and the `constraints` (pairs
     /// of points), which must not cross each other except at shared points.
-    pub(crate) fn new(frame: Rect, points: &[Point], constraints: &[(Point, Point)]) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// [`Error::TriangulationFailed`] if a constraint endpoint is not a point or a
+    /// constraint cannot be recovered (crossing constraints).
+    pub(crate) fn new(
+        frame: Rect,
+        points: &[Point],
+        constraints: &[(Point, Point)],
+    ) -> Result<Self, Error> {
         let corners = frame.corners();
         let mut cdt = Self {
             points: corners.to_vec(),
@@ -99,10 +109,10 @@ impl Cdt {
         }
 
         for &(a, b) in constraints {
-            cdt.constrain(a, b);
+            cdt.constrain(a, b)?;
         }
 
-        cdt
+        Ok(cdt)
     }
 
     /// The vertex index of `p`, if it is a vertex.
@@ -367,9 +377,9 @@ impl Cdt {
 
     /// Makes the segment `a b` an edge and marks it constrained, splitting it at the
     /// vertices that lie on it.
-    fn constrain(&mut self, a: Point, b: Point) {
+    fn constrain(&mut self, a: Point, b: Point) -> Result<(), Error> {
         let (Some(va), Some(vb)) = (self.vertex(a), self.vertex(b)) else {
-            return;
+            return Err(Error::TriangulationFailed);
         };
         // Vertices strictly inside the segment split it.
         let mut on: Vec<Point> = self
@@ -383,22 +393,24 @@ impl Cdt {
         chain.extend(on.iter().map(|p| self.vertex(*p).expect("a vertex")));
         chain.push(vb);
         for pair in chain.windows(2) {
-            self.recover(pair[0], pair[1]);
+            self.recover(pair[0], pair[1])?;
         }
+
+        Ok(())
     }
 
     /// Recovers the edge between vertices `u` and `w` (no vertex lies strictly between
     /// them) by flipping the edges that cross it, then marks it constrained.
-    fn recover(&mut self, u: u32, w: u32) {
+    fn recover(&mut self, u: u32, w: u32) -> Result<(), Error> {
         let (pu, pw) = (self.points[u as usize], self.points[w as usize]);
         for _ in 0..=16 * self.triangles.len() {
             if self.mark_edge(u, w) {
                 self.relegalize();
-                return;
+                return Ok(());
             }
 
             let Some((t, i)) = self.first_crossing(pu, pw) else {
-                return;
+                return Err(Error::TriangulationFailed);
             };
             if self.is_convex(t, i) {
                 self.flip(t, i);
@@ -407,6 +419,8 @@ impl Cdt {
                 self.flip_any_convex(pu, pw);
             }
         }
+
+        Err(Error::TriangulationFailed)
     }
 
     /// Marks the edge between `u` and `w` constrained in both triangles, if it exists.
@@ -602,7 +616,7 @@ mod tests {
                 [(c[0], c[1]), (c[1], c[2]), (c[2], c[3]), (c[3], c[0])]
             })
             .collect();
-        let cdt = Cdt::new(frame, &points, &constraints);
+        let cdt = Cdt::new(frame, &points, &constraints).unwrap();
         validate(&cdt, frame, &constraints);
     }
 
@@ -618,7 +632,7 @@ mod tests {
             (Point::new(3, 3), Point::new(9, 3)),
             (Point::new(9, 3), Point::new(9, 9)),
         ];
-        let cdt = Cdt::new(frame, &points, &constraints);
+        let cdt = Cdt::new(frame, &points, &constraints).unwrap();
         validate(&cdt, frame, &constraints);
     }
 
@@ -654,7 +668,7 @@ mod tests {
                     [(c[0], c[1]), (c[1], c[2]), (c[2], c[3]), (c[3], c[0])]
                 })
                 .collect();
-            let cdt = Cdt::new(frame, &points, &constraints);
+            let cdt = Cdt::new(frame, &points, &constraints).unwrap();
             validate(&cdt, frame, &constraints);
         }
     }

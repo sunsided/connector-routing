@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 18eb91f0eb7eca44523c1bf25cf37aaebaac0e162a3d1d8fbc4d76e54f2475f0 # shrinks to rects = [Rect { min: Point { x: 2, y: 6 }, max: Point { x: 4, y: 10 } }, Rect { min: Point { x: 4, y: 4 }, max: Point { x: 5, y: 7 } }], picks = [(2380852720797343410, 0, 3), (0, 2, 1)], objective = ShortestThenFewestBends

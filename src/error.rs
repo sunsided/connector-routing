@@ -31,6 +31,9 @@ pub enum Error {
     /// Two obstacle interiors overlap, which the triangulation-based routers do not
     /// support.
     OverlappingObstacles,
+    /// The constrained Delaunay triangulation could not recover a constraint. Only
+    /// crossing constraints cause this, which validated input rules out.
+    TriangulationFailed,
 }
 
 impl fmt::Display for Error {
@@ -45,6 +48,7 @@ impl fmt::Display for Error {
             Self::CostOverflow => f.write_str("route cost overflows u64"),
             Self::TooFewPorts => f.write_str("a net needs at least two ports"),
             Self::OverlappingObstacles => f.write_str("obstacle interiors overlap"),
+            Self::TriangulationFailed => f.write_str("constraint recovery failed"),
         }
     }
 }

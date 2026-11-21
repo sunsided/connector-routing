@@ -60,7 +60,8 @@ impl SleeveRouter {
     ///
     /// [`Error::CoordinateOutOfRange`] beyond [`MAX_COORD`](crate::MAX_COORD),
     /// [`Error::OverlappingObstacles`] if two obstacle interiors overlap (touching is
-    /// fine), [`Error::PortBlocked`] for an endpoint inside an obstacle.
+    /// fine), [`Error::PortBlocked`] for an endpoint inside an obstacle,
+    /// [`Error::TriangulationFailed`] if constraint recovery fails (a bug guard).
     ///
     /// # Panics
     ///
@@ -68,7 +69,7 @@ impl SleeveRouter {
     pub fn new(obstacles: &[Rect], endpoints: &[Point], margin: u32) -> Result<Self, Error> {
         validate(obstacles, endpoints)?;
         let margin = i32::try_from(margin.max(1)).map_err(|_| Error::CostOverflow)?;
-        let frame = frame(obstacles, endpoints, margin);
+        let frame = frame(obstacles, endpoints, margin)?;
         let mut points: Vec<Point> = obstacles.iter().flat_map(Rect::corners).collect();
         points.extend_from_slice(endpoints);
         let constraints: Vec<(Point, Point)> = obstacles
@@ -78,7 +79,7 @@ impl SleeveRouter {
                 [(c[0], c[1]), (c[1], c[2]), (c[2], c[3]), (c[3], c[0])]
             })
             .collect();
-        let cdt = Cdt::new(frame, &points, &constraints);
+        let cdt = Cdt::new(frame, &points, &constraints)?;
         let blocked = (0..cdt.triangles.len())
             .map(|t| inside_obstacle(&cdt, u32::try_from(t).expect("few triangles"), obstacles))
             .collect();
@@ -332,8 +333,9 @@ fn validate(obstacles: &[Rect], endpoints: &[Point]) -> Result<(), Error> {
     }
 }
 
-/// The bounding box of everything grown by `margin`.
-fn frame(obstacles: &[Rect], endpoints: &[Point], margin: i32) -> Rect {
+/// The bounding box of everything grown by `margin`; its corners must stay within
+/// twice [`MAX_COORD`](crate::MAX_COORD), where the in-circle test is still exact.
+fn frame(obstacles: &[Rect], endpoints: &[Point], margin: i32) -> Result<Rect, Error> {
     let mut points = obstacles
         .iter()
         .flat_map(|r| [r.min, r.max])
@@ -345,8 +347,22 @@ fn frame(obstacles: &[Rect], endpoints: &[Point], margin: i32) -> Rect {
             Point::new(hi.x.max(p.x), hi.y.max(p.y)),
         )
     });
+    let limit = 2 * i64::from(crate::MAX_COORD);
+    let grow = |c: i32, sign: i64| {
+        let value = i64::from(c) + sign * i64::from(margin);
+        if value.abs() > limit {
+            Err(Error::CoordinateOutOfRange(Point::new(c, c)))
+        } else {
+            Ok(i32::try_from(value).expect("within twice MAX_COORD"))
+        }
+    };
 
-    Rect::new(lo.x - margin, lo.y - margin, hi.x + margin, hi.y + margin)
+    Ok(Rect::new(
+        grow(lo.x, -1)?,
+        grow(lo.y, -1)?,
+        grow(hi.x, 1)?,
+        grow(hi.y, 1)?,
+    ))
 }
 
 /// A greedy vertex cover of the demand graph (paper, section 4.1): repeatedly take an

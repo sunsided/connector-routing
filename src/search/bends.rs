@@ -7,9 +7,9 @@ use crate::geom::{DirSet, Direction, Point};
 /// `arrivals`. `None` if `arrivals` is empty.
 ///
 /// This is a shortest-path distance in a relaxation of every routing graph (obstacles
-/// removed, any bend point allowed), so it is admissible and consistent. It is never
-/// below the `s_d` table of Wybrow et al. (2009, section 4) and above it in some cases;
-/// see `docs/design.md`.
+/// removed, any bend point allowed, a bend in place included), so it is admissible and
+/// consistent. It differs from the `s_d` table of Wybrow et al. (2009, section 4) in five
+/// cases; see `docs/design.md`.
 ///
 /// # Examples
 ///
@@ -157,9 +157,10 @@ mod tests {
         }
     }
 
-    /// The paper's `s_d` cases 0 to 4 (Fig. 2(a)), as lower bounds of ours.
+    /// The paper's `s_d` cases 0 to 4 (Fig. 2(a)) where ours agrees, and two where it
+    /// differs.
     #[test]
-    fn never_below_paper_table() {
+    fn compare_with_paper_table() {
         let o = Point::new(0, 0);
         let d = Direction::Up;
         // 0: same direction, target straight ahead.
@@ -177,5 +178,7 @@ mod tests {
         assert_eq!(bends_to(o, d, Point::new(3, -5), Direction::Up), 4);
         // Tighter than the paper: perpendicular arrival on the wrong side (paper: 1).
         assert_eq!(bends_to(o, d, Point::new(3, 5), Direction::Left), 3);
+        // Below the paper as read: the target exactly beside, one bend in place (paper: 3).
+        assert_eq!(bends_to(o, d, Point::new(5, 0), Direction::Right), 1);
     }
 }

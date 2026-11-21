@@ -94,13 +94,19 @@ pub struct Drawing {
 /// ```
 pub fn draw(boxes: &[Rect], edges: &[(usize, usize)], config: &Config) -> Result<Drawing, Error> {
     let ports = assign_ports(boxes, edges);
-    let mut scene = Scene::build(boxes.iter().copied(), [])?;
-    let mut connectors = Vec::with_capacity(edges.len());
-    for &(a, b) in &ports {
-        let source = scene.add_port(a)?;
-        let target = scene.add_port(b)?;
-        connectors.push(Connector { source, target });
-    }
+    let scene = Scene::build(
+        boxes.iter().copied(),
+        ports.iter().flat_map(|&(a, b)| [a, b]),
+    )?;
+    // Ports get ids in input order, two per edge.
+    let ids: Vec<_> = scene.ports().map(|(id, _)| id).collect();
+    let connectors: Vec<Connector<_>> = ids
+        .chunks(2)
+        .map(|pair| Connector {
+            source: pair[0],
+            target: pair[1],
+        })
+        .collect();
 
     let mut routing = global::route_all(&scene, &connectors, &config.routing)?;
     if config.crossing_rounds > 0 {

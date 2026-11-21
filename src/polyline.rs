@@ -248,7 +248,7 @@ impl PolylineRouter {
 
     /// Removes an obstacle: drops its corners, retests the pairs it blocked, and reports
     /// the connectors that may now have a cheaper route (their lower bound through the
-    /// freed area is below their cost).
+    /// freed area is below their cost) or a route at all.
     ///
     /// # Errors
     ///
@@ -269,11 +269,12 @@ impl PolylineRouter {
             }
         }
 
+        // A connector without a route may have become routable.
         let may_improve = self
             .connector_ids()
             .filter(|&c| {
                 let m = self.managed(c);
-                m.route.is_some() && lower_bound_through(m.source, m.target, &rect) < m.cost
+                m.route.is_none() || lower_bound_through(m.source, m.target, &rect) < m.cost
             })
             .collect();
 

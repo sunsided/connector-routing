@@ -124,8 +124,8 @@ fn compare(
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(400))]
 
-    /// Ports that may be left in any direction, anywhere outside obstacles: the OVG
-    /// search finds the brute-force optimum, with touching and overlapping obstacles.
+    /// Ports that may be left in any direction, anywhere outside obstacles: both
+    /// searches find the brute-force optimum, with touching and overlapping obstacles.
     ///
     /// Inputs lie on a lattice of spacing [`SCALE`] and the brute force searches the
     /// unit grid, which is finer: a route may use any integer line. (With spacing one,
@@ -143,12 +143,12 @@ proptest! {
         let target = Port::free(Point::new(b.0 * SCALE, b.1 * SCALE));
         let blocked = |p: Point| rects.iter().any(|r| r.interior_contains(p));
         prop_assume!(!blocked(source.point) && !blocked(target.point));
-        compare(&rects, source, target, objective, (true, false))?;
+        compare(&rects, source, target, objective, (true, true))?;
     }
 
     /// Ports on obstacle sides pointing outwards (the diagram case the papers assume):
     /// the OVG search finds the brute-force optimum; the 1-bend search is not exact here
-    /// either (see [`Search::OneBend`]).
+    /// (see `one_bend_misses_slit_between_touching_boxes`).
     #[test]
     fn optimal_with_side_ports(
         rects in proptest::collection::vec(rect(12), 1..6),
@@ -228,4 +228,24 @@ fn outward_port_needs_frame_and_stub() {
     let r = route(&scene, ids[0], ids[1], Objective::default(), Search::Ovg).unwrap();
     assert_eq!((r.length, r.bends), (24, 4));
     validate(&scene, &r, a, b, &rects);
+}
+
+/// Regression: the 1-bend search is not exact. Two boxes touch along a slit; the optimal
+/// route (length 20, 6 bends) leaves its port, turns back into the slit and squeezes
+/// through it, turning where no obstacle corner supports the segment. The 1-bend search
+/// finds only a route around the box (length 38, 4 bends). Found by the lattice
+/// property test after the bend-estimate and port-stub fixes.
+#[test]
+fn one_bend_misses_slit_between_touching_boxes() {
+    let rects = [Rect::new(8, 24, 16, 40), Rect::new(16, 16, 20, 28)];
+    let a = Port::new(Point::new(16, 28), connector_routing::DirSet::RIGHT);
+    let b = Port::new(Point::new(8, 26), connector_routing::DirSet::LEFT);
+    let scene = Scene::build(rects, [a, b]).unwrap();
+    let ids: Vec<_> = scene.ports().map(|(id, _)| id).collect();
+    let objective = Objective::ShortestThenFewestBends;
+    let ovg = route(&scene, ids[0], ids[1], objective, Search::Ovg).unwrap();
+    let one_bend = route(&scene, ids[0], ids[1], objective, Search::OneBend).unwrap();
+    assert_eq!((ovg.length, ovg.bends), (20, 6));
+    assert_eq!((one_bend.length, one_bend.bends), (38, 4));
+    validate(&scene, &one_bend, a, b, &rects);
 }

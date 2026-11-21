@@ -118,10 +118,11 @@ node covers) are what our segment-level update does on the smaller Wybrow graph.
 paper's random-offset "local nudging" is not implemented; the exact nudging below
 replaces it.
 
-Every scene mutation returns the set of connectors whose committed routes it
-invalidates (a route through a new obstacle) or may improve (a removed obstacle that a
-cheaper path could cross, with the lower-bound pruning of Wybrow et al. 2005, adapted to
-the Manhattan metric). A layout engine can then reroute only those (Dwyer et al. 2006).
+`incremental::invalidated_by` and `incremental::may_improve` report, from the committed
+routes, which connectors a change invalidates (a route through a new obstacle) or may
+improve (a removed obstacle that a cheaper path could cross, with the lower-bound
+pruning of Wybrow et al. 2005, adapted to the Manhattan metric). A layout engine can
+then reroute only those (Dwyer et al. 2006). The scene itself does not track routes.
 
 ## Single connector
 
@@ -309,7 +310,7 @@ The solver is exact and needs no LP: every constraint is a difference constraint
 
 1. find the largest integer gap `t` (capped by `max_separation`) such that every
    segment-segment and segment-obstacle arc can have gap `t`, by binary search with a
-   Bellman-Ford feasibility test (2309.01671 maximises the sum of such gap variables with
+   longest-path feasibility test (2309.01671 maximises the sum of such gap variables with
    an LP; one shared gap per component is the same objective for a single variable);
 2. if `t < separation`, retry with zero gap to obstacles (they may be touched);
 3. place every segment at the midpoint of its leftmost and rightmost feasible positions,
@@ -371,21 +372,29 @@ The free space is triangulated with an exact constrained Delaunay triangulation
 (incremental insertion with Lawson flips, then constraint recovery by flipping (Sloan),
 all predicates in `i128`; not checked against an original, the paper cites
 Domiter and Žalik). Obstacle sides are constraints, split at collinear input points.
-Dijkstra runs on the dual graph (portal-midpoint distances as integer costs), skipping
-triangles inside obstacles other than the source and target ones, and the funnel
-algorithm (Lee and Preparata; not checked against an original) pulls the path taut
-through the sleeve. Per the paper, routes are batched by a greedy vertex cover of the
-demand graph (one Dijkstra tree per cover vertex), a straight segment is tried first, and
-corner-hugging chain vertices at the endpoints are collapsed.
+Dijkstra runs on the dual graph (centroid distances, as in the paper, with integer square
+roots), skipping every triangle inside an obstacle, and the funnel algorithm (Lee and
+Preparata; not checked against an original) pulls the path taut through the sleeve. Per
+the paper, routes are batched by a greedy vertex cover of the demand graph (one Dijkstra
+tree per cover vertex) and a straight segment is tried first. The paper's vertex collapse
+is not needed: it fixes detours of routes that start at node centres inside padded
+obstacles, while our endpoints lie on obstacle boundaries. Obstacle interiors must not
+overlap (touching is fine); a failed constraint recovery is an error, not a silent gap.
+Shortcut: constraint recovery scans all triangles per flip (`O(T)`), fine for hundreds of
+obstacles.
 
 ## Poly-line routing (Wybrow et al. 2005)
 
-The visibility graph over obstacle corners and ports, with the "hidden region" pruning
-(a shortest path bends around a corner by less than 180 degrees), A* with the Euclidean
-lower bound, and the invisibility graph for incremental updates: every rejected
-corner-pair edge remembers one obstacle that blocks it, so removing an obstacle retests
-only its edges. Object removal reroutes only connectors whose lower bound through the
-freed region beats their current cost. Costs follow the thesis' formula
+The visibility graph over obstacle corners and ports, A* with the Euclidean lower bound,
+and the invisibility graph for incremental updates: every rejected node pair remembers
+one obstacle that blocks it, so removing an obstacle retests only its pairs. Object
+removal reports only connectors whose lower bound through the freed region beats their
+current cost (or that had no route). The bound is the larger of the straight distance
+and the distances to the region, weaker than the paper's exact closed form but safe. The
+paper's "hidden region" pruning (shortest paths bend around corners by less than 180
+degrees) is not implemented: it only shrinks the graph. Lengths are fixed point
+(`2^8` per unit), rounded up per edge against a heuristic rounded down, which keeps A*
+admissible and consistent. Costs follow the thesis' formula
 `length + segment_penalty * bends + crossing_penalty * crossings`; the angle term
 `beta * a * log(a + 1) / 10` needs floats and is not implemented (open question).
 
