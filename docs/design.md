@@ -338,10 +338,28 @@ and the binary search costs `O(E log W)` per component. `Nudged::overlaps` count
 segments still on top of each other (two port segments on one line, or a channel with no
 room); `Nudged::separation` is the smallest gap achieved.
 
-The result centres single segments in their alley and spreads bundles evenly. Wybrow et
-al. instead project desired positions (alley middles, or the corner a "U" bends around)
-onto the constraints with VPSC (quadratic programming); that mode is not implemented
-(open question). Every pass preserves the order of overlapping segments, and every moved
+The result centres single segments in their alley and spreads bundles evenly.
+
+**Water-filling.** One common gap per component let a single tight spot squeeze a whole
+bundle. Each component now takes its largest gap; if that is below the cap, only the
+bottleneck (the members with the least slack) is placed, and the rest get a new, larger
+gap in the next round, with the placed segments as constants. On the 300-connector bench
+this cut the overlapping segment pairs from 8,985 to 7,238; the rest come from genuinely
+overfull lines (see open questions).
+
+**Projection (`Placement::Project`).** The alternative of Wybrow et al.: desired positions
+(the middle of the alley for the middle segment of a Z or S, the current line otherwise:
+the obstacle side a U bends around) are projected onto the constraints at the separation
+by least squares, after the VPSC method of Dwyer, Marriott and Stuckey (blocks of tight
+constraints at the mean of their desired positions; merge along the most violated
+constraint; split at a negative Lagrange multiplier; repeat). Arithmetic is exact over
+rationals; the result is rounded per block and repaired into the extreme feasible
+positions in scan order, which keeps every constraint. Not checked against the VPSC paper
+(not available here; implemented from its description in Wybrow 2009 and the thesis).
+Compared on the same scenes: both pass the same property tests (obstacles, ports,
+topology, separation, crossings); on the 300-connector bench the projection moves
+segments 83,412 units in total against 296,278 for spreading, at 0.43 s against 0.34 s,
+and keeps bundles at exactly the separation instead of spreading them. Every pass preserves the order of overlapping segments, and every moved
 segment sweeps an obstacle-free rectangle, so routes keep their topology (Marriott et
 al. 2014's notion of topology-preserving edge moves). The property test checks exactly
 that (vertical segments sweep with their original extent in the first pass, horizontal
@@ -457,7 +475,7 @@ not available; implemented from secondary descriptions).
 | same | cost `f(length, bends)`, `(vertex, direction)` A* | checked; exact bend estimate (paper's case 3 overestimates as read), no neighbour pruning, other tie-break |
 | same | ordering of shared edges: pseudo directions, Theorems 3 and 4 | checked; pseudo directions as in the paper, order by walk comparator instead of `L ++ S ++ R`; theorems tested |
 | same | nudging: separation constraints by scan line | checked |
-| same | nudging: VPSC projection to desired positions | alternative (max-gap + midpoint, exact); VPSC open |
+| same | nudging: VPSC projection to desired positions | checked against the paper's description; both placements built, spreading default |
 | Marriott, Stuckey, Wybrow, *Seeing Around Corners*, Diagrams 2014 | obstacle-hugging routes, 1-bend visibility graph | checked; lazy edges; not exact in tests, so opt-in, not default |
 | Wybrow, Marriott, Stuckey, *Orthogonal Hyperedge Routing*, Diagrams 2012 | hyperedge Heuristics 1 and 2 (Fig. 6), local improvement | checked; segment shifting subsumes junction moving |
 | Wybrow, Marriott, Stuckey, *Incremental Connector Routing*, GD 2005 | poly-line visibility graph, invisibility graph, removal pruning, hidden regions | checked; hidden-region pruning only without bend costs |
@@ -468,7 +486,7 @@ not available; implemented from secondary descriptions).
 | Nachmanson, Chen, *Browsing Large Graphs with Tile Pyramids and Sleeve Routing in the Browser*, arXiv 2605.17498 | sleeve routing, vertex cover batching, straight-line first | checked; vertex collapse replaced by wall exits for endpoints in slits |
 | McMurchie, Ebeling, *PathFinder*, FPGA 1995 | negotiated congestion | not checked |
 | Pupyrev et al., metro-line crossing minimisation | path order comparator | not checked (via 2309.01671) |
-| Dwyer, Marriott, Stuckey, VPSC / *Fast node overlap removal*, GD 2005 | scan-line constraint generation | not checked (via Wybrow 2009) |
+| Dwyer, Marriott, Stuckey, VPSC / *Fast node overlap removal*, GD 2005 | scan-line constraint generation, VPSC satisfy and refine | not checked (via Wybrow 2009 and the thesis) |
 | Lee and Preparata; Chazelle (funnel algorithm) | funnel | not checked |
 | Lawson; Sloan (Delaunay flips, constraint recovery) | CDT | not checked |
 | Long, Zhou, Memik, EBOARST (SPTF/MTST) | hyperedge Heuristic 1 | not checked (via Wybrow 2012) |
@@ -499,9 +517,15 @@ README's status list.
   slower than the OVG search in the lazy form here. Default: OVG search; 1-bend opt-in.
 - **Port stubs and frame.** Additions to the paper's graph, needed for exactness with
   port directions. Default: on; they add up to nine interesting points per port.
-- **Nudging placement.** Max common gap plus midpoint (spreading, 2309.01671) instead
-  of VPSC projection to desired positions (Wybrow 2009). Default: separation 4, spread
-  at most 8; `max_separation = u32::MAX` spreads over whole channels.
+- **Nudging placement.** Spreading (max gap plus midpoint, 2309.01671) is the default;
+  VPSC projection (Wybrow 2009) is `Placement::Project`. Default: separation 4, spread at
+  most 8; `max_separation = u32::MAX` spreads over whole channels.
+- **Dense scenes leave overlaps.** On the 300-connector bench, lines that PathFinder
+  considers within capacity (a channel crossing a free band has unbounded capacity) carry
+  long chains of mutually ordered segments that the channel cannot hold at separation 1;
+  7,238 overlapping pairs remain. Blocking other connectors' ports in the router (as
+  libavoid does) was tried and made it worse (10,509), so it is not in. A capacity model
+  per line rather than per cross-section would address it.
 - **Forced orders.** With obstacles, port-pinned segments can force orders that cost
   crossings beyond the combinatorial count. Default: hard geometric arcs win over soft
   orders; remaining cycles are broken deterministically.

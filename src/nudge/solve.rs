@@ -29,6 +29,11 @@ pub(crate) struct Problem<'a> {
     pub(crate) separation: i64,
     /// The largest gap to spread segments to in components bounded on both sides.
     pub(crate) max_separation: i64,
+    /// Whether to project desired positions (VPSC) instead of spreading.
+    pub(crate) project: bool,
+    /// Whether each segment is the middle of a Z or S (its neighbours leave to opposite
+    /// sides), whose desired position is the middle of its alley.
+    pub(crate) zig: &'a [bool],
 }
 
 /// The result of one pass.
@@ -198,30 +203,31 @@ impl Problem<'_> {
     pub(crate) fn solve(&self) -> Solution {
         let mut position: Vec<i64> = self.current.iter().map(|&c| i64::from(c)).collect();
         let mut separation: Option<i64> = None;
-        for comp in self.components() {
-            let (t, relaxed) = self.choose_gap(&comp);
-            if comp.has_pairs {
-                separation = Some(separation.map_or(t, |s: i64| s.min(t)));
+        let mut placed: BTreeMap<usize, i64> = BTreeMap::new();
+        // Water-filling: each round gives every component its largest common gap; a
+        // component held below its cap by a bottleneck places only the bottleneck's
+        // segments and leaves the rest for the next round, where they get gaps of their
+        // own. So one tight spot does not squeeze a whole bundle.
+        loop {
+            let movable: Vec<bool> = (0..self.movable.len())
+                .map(|i| self.movable[i] && !placed.contains_key(&i))
+                .collect();
+            if !movable.iter().any(|&m| m) {
+                break;
             }
 
-            let lo = self
-                .lowest(&comp, t, relaxed)
-                .expect("the chosen gap is feasible");
-            let hi = self.highest(&comp, t, relaxed);
-            let anchored_low = self.anchored(&comp, true);
-            let anchored_high = self.anchored(&comp, false);
-            for (&v, &l) in &lo {
-                // Bounded on both sides: centred. Open on one side: packed against the
-                // anchored side (routes outside the scene hug it). Free: placed below.
-                position[v] = match (anchored_low, anchored_high) {
-                    (true, true) => (l + hi[&v]).div_euclid(2),
-                    (false, true) => hi[&v],
-                    _ => l,
-                };
-            }
-
-            if !anchored_low && !anchored_high {
-                self.float(&comp, &lo, &hi, &mut position);
+            let constant = |item: Item| match item {
+                Item::Segment(i) if placed.contains_key(&i) => placed[&i],
+                _ => (self.constant)(item),
+            };
+            let round = Problem {
+                movable: &movable,
+                constant: &constant,
+                ..*self
+            };
+            let finished = round.solve_round(&mut position, &mut separation);
+            for v in finished {
+                placed.insert(v, position[v]);
             }
         }
 
@@ -231,26 +237,169 @@ impl Problem<'_> {
         }
     }
 
-    /// Picks the common gap of a component: the largest gap with obstacles kept at that
+    /// One water-filling round over all components; returns the segments it placed.
+    fn solve_round(&self, position: &mut [i64], separation: &mut Option<i64>) -> Vec<usize> {
+        let mut finished = Vec::new();
+        for comp in self.components() {
+            let (t, relaxed, cap) = self.choose_gap(&comp);
+            if comp.has_pairs {
+                *separation = Some(separation.map_or(t, |s: i64| s.min(t)));
+            }
+
+            let lo = self
+                .lowest(&comp, t, relaxed)
+                .expect("the chosen gap is feasible");
+            let hi = self.highest(&comp, t, relaxed);
+            if t < cap && comp.has_pairs {
+                // Place the bottleneck (the members with the least slack) and leave the
+                // others for the next round.
+                let least = comp
+                    .members
+                    .iter()
+                    .map(|v| hi[v] - lo[v])
+                    .min()
+                    .unwrap_or(0);
+                for &v in &comp.members {
+                    if hi[&v] - lo[&v] == least {
+                        position[v] = (lo[&v] + hi[&v]).div_euclid(2);
+                        finished.push(v);
+                    }
+                }
+
+                continue;
+            }
+
+            finished.extend(comp.members.iter().copied());
+            self.place(&comp, (t, relaxed), (&lo, &hi), position);
+        }
+
+        finished
+    }
+
+    /// Places a whole component at gap `t` between its extreme solutions `lo` and `hi`.
+    fn place(
+        &self,
+        comp: &Component,
+        gap: (i64, bool),
+        (lo, hi): (&BTreeMap<usize, i64>, &BTreeMap<usize, i64>),
+        position: &mut [i64],
+    ) {
+        let anchored_low = self.anchored(comp, true);
+        let anchored_high = self.anchored(comp, false);
+        if self.project {
+            self.project_component(comp, gap, (lo, hi), anchored_low && anchored_high, position);
+            return;
+        }
+
+        for (&v, &l) in lo {
+            // Bounded on both sides: centred. Open on one side: packed against the
+            // anchored side (routes outside the scene hug it). Free: placed below.
+            position[v] = match (anchored_low, anchored_high) {
+                (true, true) => (l + hi[&v]).div_euclid(2),
+                (false, true) => hi[&v],
+                _ => l,
+            };
+        }
+
+        if !anchored_low && !anchored_high {
+            self.float(comp, lo, hi, position);
+        }
+    }
+
+    /// Places a component by least-squares projection of its desired positions (Wybrow
+    /// et al. 2009, section 5.2): the middle of the alley for the middle segment of a Z
+    /// (when the component is bounded on both sides), the current position otherwise.
+    /// The rounded projection is repaired into `[lo, hi]` in scan order, which keeps
+    /// every constraint.
+    fn project_component(
+        &self,
+        comp: &Component,
+        (t, relaxed): (i64, bool),
+        (lo, hi): (&BTreeMap<usize, i64>, &BTreeMap<usize, i64>),
+        bounded: bool,
+        position: &mut [i64],
+    ) {
+        let mut index: BTreeMap<Item, usize> = BTreeMap::new();
+        let mut desired = Vec::new();
+        let mut fixed = Vec::new();
+        for &v in &comp.members {
+            index.insert(Item::Segment(v), desired.len());
+            let middle = (lo[&v] + hi[&v]).div_euclid(2);
+            desired.push(Some(if bounded && self.zig[v] {
+                middle
+            } else {
+                i64::from(self.current[v])
+            }));
+            fixed.push(0);
+        }
+
+        let mut node = |item: Item, desired: &mut Vec<Option<i64>>, fixed: &mut Vec<i64>| {
+            *index.entry(item).or_insert_with(|| {
+                desired.push(None);
+                fixed.push((self.constant)(item));
+                desired.len() - 1
+            })
+        };
+        let mut arcs = Vec::new();
+        for &v in &comp.members {
+            for &(from, kind) in comp.incoming.get(&v).map_or(&[][..], Vec::as_slice) {
+                let left = node(from, &mut desired, &mut fixed);
+                let right = node(Item::Segment(v), &mut desired, &mut fixed);
+                arcs.push(super::vpsc::Arc {
+                    left,
+                    right,
+                    gap: Self::gap(kind, t, relaxed),
+                });
+            }
+
+            for &(to, kind) in comp.outgoing.get(&v).map_or(&[][..], Vec::as_slice) {
+                if self.is_var(to).is_none() {
+                    let left = node(Item::Segment(v), &mut desired, &mut fixed);
+                    let right = node(to, &mut desired, &mut fixed);
+                    arcs.push(super::vpsc::Arc {
+                        left,
+                        right,
+                        gap: Self::gap(kind, t, relaxed),
+                    });
+                }
+            }
+        }
+
+        let projected = super::vpsc::project(&desired, &fixed, &arcs);
+        for &v in &comp.members {
+            let mut x = projected[index[&Item::Segment(v)]].max(lo[&v]);
+            for &(from, kind) in comp.incoming.get(&v).map_or(&[][..], Vec::as_slice) {
+                let base = match self.is_var(from) {
+                    Some(u) => position[u],
+                    None => (self.constant)(from),
+                };
+                x = x.max(base + Self::gap(kind, t, relaxed));
+            }
+
+            position[v] = x.min(hi[&v]);
+        }
+    }
+
+    /// Picks the common gap of a component, with the cap it was searched up to: the largest gap with obstacles kept at that
     /// gap too if it reaches the separation, else the largest gap with obstacles allowed
     /// to touch.
-    fn choose_gap(&self, comp: &Component) -> (i64, bool) {
+    fn choose_gap(&self, comp: &Component) -> (i64, bool, i64) {
         let bounded = self.anchored(comp, true) && self.anchored(comp, false);
-        let cap = if bounded {
+        let cap = if bounded && !self.project {
             self.max_separation
         } else {
             self.separation
         };
         let strict = self.largest_gap(comp, cap, false).unwrap_or(0);
         if strict >= self.separation.min(cap) {
-            return (strict, false);
+            return (strict, false, cap);
         }
 
         let relaxed = self.largest_gap(comp, cap, true).unwrap_or(0);
         if relaxed > strict {
-            (relaxed, true)
+            (relaxed, true, cap)
         } else {
-            (strict, false)
+            (strict, false, cap)
         }
     }
 

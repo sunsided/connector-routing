@@ -103,7 +103,10 @@ const ANGLE_COST: [u64; 101] = [
 
 /// The angle class `k` (`a = k / 10`, `0..=100`) of the turn at `b` from `a` to `c`,
 /// from the cosine of the turning angle (integer square root, then the class table).
-#[expect(clippy::many_single_char_names, reason = "the usual names of a turn and its two vectors")]
+#[expect(
+    clippy::many_single_char_names,
+    reason = "the usual names of a turn and its two vectors"
+)]
 fn angle_class(a: Point, b: Point, c: Point) -> usize {
     let u = (
         i128::from(b.x) - i128::from(a.x),

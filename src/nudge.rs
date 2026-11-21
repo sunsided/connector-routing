@@ -25,6 +25,7 @@ mod constraints;
 mod order;
 mod segments;
 mod solve;
+mod vpsc;
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -49,6 +50,23 @@ pub struct Config {
     /// channels keep their bundles centred at this gap. Use `u32::MAX` to spread
     /// segments over the whole channel (arXiv 2309.01671).
     pub max_separation: u32,
+    /// How segments are placed within their feasible range.
+    pub placement: Placement,
+}
+
+/// How nudging places segments once the separation is chosen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Placement {
+    /// The largest common gap up to [`Config::max_separation`], then the midpoint of the
+    /// extreme feasible positions: bundles spread evenly and centre in their channel
+    /// (arXiv 2309.01671).
+    #[default]
+    Spread,
+    /// Least-squares projection of desired positions onto the constraints at
+    /// [`Config::separation`] (VPSC, as in Wybrow et al. 2009): the middle segment of a Z
+    /// wants the middle of its alley, every other segment its current line (the
+    /// obstacle side a U bends around), so routes stay closer to the graph.
+    Project,
 }
 
 impl Default for Config {
@@ -56,6 +74,7 @@ impl Default for Config {
         Self {
             separation: 4,
             max_separation: 8,
+            placement: Placement::Spread,
         }
     }
 }
@@ -448,6 +467,8 @@ fn pass(
         current: &lines,
         separation: i64::from(config.separation),
         max_separation: i64::from(config.max_separation),
+        project: config.placement == Placement::Project,
+        zig: &zig_segments(nets, segments),
     };
     let solution = problem.solve();
     for (id, &m) in movable.iter().enumerate() {
@@ -458,6 +479,28 @@ fn pass(
     }
 
     solution.separation
+}
+
+/// Whether each segment is the middle of a Z or S: its perpendicular neighbours at its
+/// two ends leave to opposite sides.
+fn zig_segments(nets: &[Net], segments: &Segments) -> Vec<bool> {
+    segments
+        .list
+        .iter()
+        .map(|s| {
+            let across = s.forward().left();
+            let side = |v: VertexId| {
+                let arms = nets[s.net].arms_at(v);
+                match (arms.contains(across), arms.contains(across.reverse())) {
+                    (true, false) => Some(true),
+                    (false, true) => Some(false),
+                    _ => None,
+                }
+            };
+            s.vertices.len() > 1
+                && matches!((side(s.low()), side(s.high())), (Some(a), Some(b)) if a != b)
+        })
+        .collect()
 }
 
 /// The scan rank of every segment: its index in the scan order of all objects.

@@ -126,6 +126,7 @@ fn shared_corner_crosses_once() {
     let config = nudge::Config {
         separation: 1,
         max_separation: 2,
+        ..nudge::Config::default()
     };
     let nudged = nudge::nudge(g, &[], &routes, &config);
     assert_eq!(nudged.overlaps, 0);

@@ -62,6 +62,28 @@ fn instance(
     (scene, connectors, rects)
 }
 
+/// Prints how far each placement moves the segments of `routing`, with the separation
+/// and overlaps it leaves.
+fn report_placements(scene: &Scene, rects: &[Rect], routing: &global::Routing) {
+    for placement in [nudge::Placement::Spread, nudge::Placement::Project] {
+        let config = nudge::Config {
+            placement,
+            ..nudge::Config::default()
+        };
+        let nudged = nudge::nudge(scene.graph(), rects, &routing.routes, &config);
+        let moved: u64 = routing
+            .routes
+            .iter()
+            .zip(&nudged.routes)
+            .flat_map(|(r, n)| r.points.iter().zip(n).map(|(a, b)| a.manhattan(*b)))
+            .sum();
+        eprintln!(
+            "{placement:?}: separation {:?}, overlaps {}, total movement {moved}",
+            nudged.separation, nudged.overlaps
+        );
+    }
+}
+
 /// Runs every benchmark on one instance of 192 boxes and 300 connectors.
 fn benches(c: &mut Criterion) {
     let (scene, connectors, rects) = instance(16, 12, 300);
@@ -124,12 +146,25 @@ fn benches(c: &mut Criterion) {
             )
         });
     });
+    group.bench_function("nudge_project_300", |b| {
+        let config = nudge::Config {
+            placement: nudge::Placement::Project,
+            ..nudge::Config::default()
+        };
+        b.iter(|| nudge::nudge(scene.graph(), &rects, &routing.routes, &config));
+    });
+    report_placements(&scene, &rects, &routing);
     group.bench_function("pipeline_300", |b| {
         let es = edges(rects.len(), 300);
         b.iter(|| pipeline::draw(&rects, &es, &pipeline::Config::default()).unwrap());
     });
     group.finish();
 
+    any_angle(c, &rects);
+}
+
+/// Sleeve and poly-line routing on the obstacles of the instance.
+fn any_angle(c: &mut Criterion, rects: &[Rect]) {
     let mut group = c.benchmark_group("any_angle");
     group.sample_size(10);
     let centres: Vec<(Point, Point)> = edges(rects.len(), 300)
@@ -144,14 +179,14 @@ fn benches(c: &mut Criterion) {
     let endpoints: Vec<Point> = centres.iter().flat_map(|&(a, b)| [a, b]).collect();
     group.bench_function("sleeve_build_and_route_300", |b| {
         b.iter(|| {
-            let router = SleeveRouter::new(&rects, &endpoints, 10).unwrap();
+            let router = SleeveRouter::new(rects, &endpoints, 10).unwrap();
             black_box(router.route_all(&centres))
         });
     });
     group.bench_function("polyline_build_and_route_100", |b| {
         b.iter(|| {
             let mut router = PolylineRouter::new(polyline::Config::default());
-            for r in &rects {
+            for r in rects {
                 router.add_obstacle(*r).unwrap();
             }
 

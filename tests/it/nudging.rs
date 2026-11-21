@@ -205,9 +205,11 @@ proptest! {
         let Ok(routing) = route_all(&scene, &connectors, &Config::default()) else {
             return Ok(());
         };
-        let config = nudge::Config { separation: 1, max_separation: 2 };
-        let nudged = nudge::nudge(scene.graph(), &rects, &routing.routes, &config);
         let ports: Vec<_> = connectors.iter().map(|c| (scene.port(c.source).unwrap().point, scene.port(c.target).unwrap().point)).collect();
-        validate(&rects, &routing.routes, &nudged, &ports, scene.graph());
+        for placement in [nudge::Placement::Spread, nudge::Placement::Project] {
+            let config = nudge::Config { separation: 1, max_separation: 2, placement };
+            let nudged = nudge::nudge(scene.graph(), &rects, &routing.routes, &config);
+            validate(&rects, &routing.routes, &nudged, &ports, scene.graph());
+        }
     }
 }
