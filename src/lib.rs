@@ -22,6 +22,7 @@ pub mod pipeline;
 mod route;
 mod scene;
 mod search;
+pub mod sleeve;
 
 pub use error::Error;
 pub use geom::{Axis, DirSet, Direction, MAX_COORD, Point, Rect, Side};

@@ -28,6 +28,9 @@ pub enum Error {
     CostOverflow,
     /// A net needs at least two ports.
     TooFewPorts,
+    /// Two obstacle interiors overlap, which the triangulation-based routers do not
+    /// support.
+    OverlappingObstacles,
 }
 
 impl fmt::Display for Error {
@@ -41,6 +44,7 @@ impl fmt::Display for Error {
             Self::NoRoute { connector } => write!(f, "no route for connector {connector}"),
             Self::CostOverflow => f.write_str("route cost overflows u64"),
             Self::TooFewPorts => f.write_str("a net needs at least two ports"),
+            Self::OverlappingObstacles => f.write_str("obstacle interiors overlap"),
         }
     }
 }
