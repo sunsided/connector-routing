@@ -36,6 +36,18 @@ tasks:
       - cargo build --workspace --all-targets --all-features {{.CLI_ARGS}}
       - task: fuzz:build
 
+  build:no-std:
+    desc: Build the library for a bare-metal target (NO_STD_TARGET), with default and all features
+    vars:
+      NO_STD_TARGET: '{{.NO_STD_TARGET | default "thumbv7em-none-eabihf"}}'
+    preconditions:
+      - sh: rustup target list --installed | grep -qx '{{.NO_STD_TARGET}}'
+        msg: "target missing - rustup target add {{.NO_STD_TARGET}}"
+    cmds:
+      # The crate is no_std plus alloc; the multi-objective feature must stay no_std too.
+      - cargo build --lib --target {{.NO_STD_TARGET}}
+      - cargo build --lib --target {{.NO_STD_TARGET}} --all-features
+
   test:
     desc: Run tests (nextest if installed, cargo test otherwise), then doctests
     cmds:
@@ -200,6 +212,7 @@ tasks:
       - task: test
       - task: deny
       - task: msrv
+      - task: build:no-std
       - task: fuzz:build
       - task: fuzz:lint
 
