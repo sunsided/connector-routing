@@ -1,7 +1,7 @@
 [package]
 name = "connector-routing"
 description = "Connector routing for diagrams and schematics: many orthogonal connectors at once with bend, length and crossing costs, negotiated congestion, rip-up and reroute, and nudging"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.86"
 authors = ["Markus Mayer <widemeadows@gmail.com>"]
