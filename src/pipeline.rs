@@ -75,7 +75,10 @@ impl Default for Config {
 /// A finished drawing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Drawing {
-    /// The ports of each edge, `(source, target)`, in input order.
+    /// The ports of each edge, `(source, target)`, in input order, as assigned on the
+    /// input boxes. Full nudging ([`full`](Self::full)) moves the boxes and the route ends
+    /// but not these ports; the first and last points of each route are then the port
+    /// positions on the moved [`boxes`](Self::boxes).
     pub ports: Vec<(Port, Port)>,
     /// One polyline per edge, in input order, from its source port to its target port.
     pub routes: Vec<Vec<Point>>,
