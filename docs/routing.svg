@@ -1,5 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-20 -20 600 290" width="600" height="290" font-family="sans-serif" font-size="14">
-<rect x="-20" y="-20" width="600" height="290" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-20 -50 1200 320" width="1200" height="320" font-family="sans-serif" font-size="14">
+<rect x="-20" y="-50" width="1200" height="320" fill="#ffffff"/>
+<g transform="translate(0 0)">
+<text x="280" y="-26" text-anchor="middle" font-size="16" fill="#222222">Orthogonal: pipeline::draw</text>
 <polyline points="40,100 40,25 160,25" fill="none" stroke="#4e79a7" stroke-width="2" stroke-linejoin="round"/>
 <circle cx="40" cy="100" r="3" fill="#4e79a7"/>
 <circle cx="160" cy="25" r="3" fill="#4e79a7"/>
@@ -44,4 +46,52 @@
 <text x="360" y="185" text-anchor="middle" dominant-baseline="central" fill="#222222">F</text>
 <rect x="480" y="100" width="80" height="50" rx="4" fill="#f2f2f2" stroke="#444444" stroke-width="1.5"/>
 <text x="520" y="125" text-anchor="middle" dominant-baseline="central" fill="#222222">G</text>
+</g>
+<g transform="translate(600 0)">
+<text x="280" y="-26" text-anchor="middle" font-size="16" fill="#222222">Any-angle: SleeveRouter</text>
+<polyline points="40,100 160,25" fill="none" stroke="#4e79a7" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="40" cy="100" r="3" fill="#4e79a7"/>
+<circle cx="160" cy="25" r="3" fill="#4e79a7"/>
+<polyline points="80,125 160,125" fill="none" stroke="#f28e2b" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="80" cy="125" r="3" fill="#f28e2b"/>
+<circle cx="160" cy="125" r="3" fill="#f28e2b"/>
+<polyline points="40,150 160,225" fill="none" stroke="#e15759" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="40" cy="150" r="3" fill="#e15759"/>
+<circle cx="160" cy="225" r="3" fill="#e15759"/>
+<polyline points="240,16 320,65" fill="none" stroke="#76b7b2" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="240" cy="16" r="3" fill="#76b7b2"/>
+<circle cx="320" cy="65" r="3" fill="#76b7b2"/>
+<polyline points="240,116 360,90" fill="none" stroke="#59a14f" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="240" cy="116" r="3" fill="#59a14f"/>
+<circle cx="360" cy="90" r="3" fill="#59a14f"/>
+<polyline points="240,133 360,160" fill="none" stroke="#edc948" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="240" cy="133" r="3" fill="#edc948"/>
+<circle cx="360" cy="160" r="3" fill="#edc948"/>
+<polyline points="240,225 320,185" fill="none" stroke="#b07aa1" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="240" cy="225" r="3" fill="#b07aa1"/>
+<circle cx="320" cy="185" r="3" fill="#b07aa1"/>
+<polyline points="240,33 320,90 480,125" fill="none" stroke="#ff9da7" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="240" cy="33" r="3" fill="#ff9da7"/>
+<circle cx="480" cy="125" r="3" fill="#ff9da7"/>
+<polyline points="400,65 520,100" fill="none" stroke="#9c755f" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="400" cy="65" r="3" fill="#9c755f"/>
+<circle cx="520" cy="100" r="3" fill="#9c755f"/>
+<polyline points="400,185 520,150" fill="none" stroke="#bab0ac" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="400" cy="185" r="3" fill="#bab0ac"/>
+<circle cx="520" cy="150" r="3" fill="#bab0ac"/>
+<rect x="0" y="100" width="80" height="50" rx="4" fill="#f2f2f2" stroke="#444444" stroke-width="1.5"/>
+<text x="40" y="125" text-anchor="middle" dominant-baseline="central" fill="#222222">A</text>
+<rect x="160" y="0" width="80" height="50" rx="4" fill="#f2f2f2" stroke="#444444" stroke-width="1.5"/>
+<text x="200" y="25" text-anchor="middle" dominant-baseline="central" fill="#222222">B</text>
+<rect x="160" y="100" width="80" height="50" rx="4" fill="#f2f2f2" stroke="#444444" stroke-width="1.5"/>
+<text x="200" y="125" text-anchor="middle" dominant-baseline="central" fill="#222222">C</text>
+<rect x="160" y="200" width="80" height="50" rx="4" fill="#f2f2f2" stroke="#444444" stroke-width="1.5"/>
+<text x="200" y="225" text-anchor="middle" dominant-baseline="central" fill="#222222">D</text>
+<rect x="320" y="40" width="80" height="50" rx="4" fill="#f2f2f2" stroke="#444444" stroke-width="1.5"/>
+<text x="360" y="65" text-anchor="middle" dominant-baseline="central" fill="#222222">E</text>
+<rect x="320" y="160" width="80" height="50" rx="4" fill="#f2f2f2" stroke="#444444" stroke-width="1.5"/>
+<text x="360" y="185" text-anchor="middle" dominant-baseline="central" fill="#222222">F</text>
+<rect x="480" y="100" width="80" height="50" rx="4" fill="#f2f2f2" stroke="#444444" stroke-width="1.5"/>
+<text x="520" y="125" text-anchor="middle" dominant-baseline="central" fill="#222222">G</text>
+</g>
 </svg>
