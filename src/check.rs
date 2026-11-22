@@ -104,8 +104,9 @@ pub fn orthogonal_crossings(a: &[Point], b: &[Point]) -> usize {
     let mut count = 0;
     for pa in a.windows(2) {
         for pb in b.windows(2) {
-            if segments_cross(pa[0], pa[1], pb[0], pb[1])
-                || segments_cross(pb[0], pb[1], pa[0], pa[1])
+            if crossing_point(pa[0], pa[1], pb[0], pb[1])
+                .or_else(|| crossing_point(pb[0], pb[1], pa[0], pa[1]))
+                .is_some()
             {
                 count += 1;
             }
@@ -115,17 +116,17 @@ pub fn orthogonal_crossings(a: &[Point], b: &[Point]) -> usize {
     count
 }
 
-/// Whether horizontal segment `h0 h1` and vertical segment `v0 v1` cross at a point
-/// interior to both.
-fn segments_cross(h0: Point, h1: Point, v0: Point, v1: Point) -> bool {
+/// The point where horizontal segment `h0 h1` and vertical segment `v0 v1` cross, if
+/// they cross at a point interior to both.
+pub(crate) fn crossing_point(h0: Point, h1: Point, v0: Point, v1: Point) -> Option<Point> {
     if h0.y != h1.y || v0.x != v1.x || h0.x == h1.x || v0.y == v1.y {
-        return false;
+        return None;
     }
 
     let (x0, x1) = (h0.x.min(h1.x), h0.x.max(h1.x));
     let (y0, y1) = (v0.y.min(v1.y), v0.y.max(v1.y));
 
-    x0 < v0.x && v0.x < x1 && y0 < h0.y && h0.y < y1
+    (x0 < v0.x && v0.x < x1 && y0 < h0.y && h0.y < y1).then(|| Point::new(v0.x, h0.y))
 }
 
 /// The smallest distance between two parallel, overlapping axis-parallel segments of

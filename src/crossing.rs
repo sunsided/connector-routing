@@ -7,12 +7,16 @@
 //! two ends put the routes on different sides, and one per shared vertex they pass
 //! straight through in perpendicular directions. Ordering and nudging realise exactly
 //! these.
+//!
+//! [`points`] and [`iter_points`] list where finished routes cross, for drawing hops
+//! ("overpasses") at the crossings.
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 
-use crate::geom::Direction;
+use crate::check::crossing_point;
+use crate::geom::{Direction, Point};
 use crate::graph::{RoutingGraph, VertexId};
 use crate::route::Route;
 use crate::search::{Weights, cost_of};
@@ -339,4 +343,79 @@ fn is_simple(path: &[VertexId]) -> bool {
     sorted.sort_unstable();
 
     sorted.windows(2).all(|w| w[0] != w[1])
+}
+
+/// A proper crossing between two finished orthogonal routes, as [`iter_points`] reports
+/// it.
+///
+/// Each side is `(route, segment)`: the index of the route, and the index `k` of its
+/// segment from point `k` to point `k + 1`. A renderer draws a hop on one of the two
+/// segments at [`at`](Self::at).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct Crossing {
+    /// Where the two segments cross.
+    pub at: Point,
+    /// The route and segment index of the horizontal segment.
+    pub horizontal: (usize, usize),
+    /// The route and segment index of the vertical segment.
+    pub vertical: (usize, usize),
+}
+
+/// The proper crossings between different routes of a drawing, such as
+/// [`Drawing::routes`](crate::pipeline::Drawing::routes) or nudged routes; see
+/// [`iter_points`].
+#[must_use]
+pub fn points(routes: &[Vec<Point>]) -> Vec<Crossing> {
+    iter_points(routes).collect()
+}
+
+/// Iterates the proper crossings between different routes of a drawing, without
+/// collecting them; [`points`] collects them.
+///
+/// The rules are those of [`check::orthogonal_crossings`](crate::check::orthogonal_crossings):
+/// a horizontal and a vertical segment cross where their relative interiors meet.
+/// Touching endpoints, collinear overlaps and segments that are not axis-parallel are
+/// not crossings, and a route crossing itself is not reported. Crossings come in order
+/// of route pair `(i, j)` with `i < j`, then of the segments of `i`, then of `j`.
+///
+/// # Examples
+///
+/// ```
+/// use connector_routing::{Point, crossing};
+///
+/// let routes = [
+///     vec![Point::new(5, 0), Point::new(5, 10)],
+///     vec![Point::new(0, 5), Point::new(10, 5), Point::new(10, 20)],
+/// ];
+/// let mut crossings = crossing::iter_points(&routes);
+/// let c = crossings.next().unwrap();
+/// assert_eq!(c.at, Point::new(5, 5));
+/// assert_eq!((c.horizontal, c.vertical), ((1, 0), (0, 0)));
+/// assert_eq!(crossings.next(), None);
+/// ```
+pub fn iter_points(routes: &[Vec<Point>]) -> impl Iterator<Item = Crossing> {
+    routes.iter().enumerate().flat_map(move |(i, a)| {
+        routes
+            .iter()
+            .enumerate()
+            .skip(i + 1)
+            .flat_map(move |(j, b)| {
+                a.windows(2).enumerate().flat_map(move |(sa, pa)| {
+                    b.windows(2).enumerate().filter_map(move |(sb, pb)| {
+                        let crossing = |h, v, at| Crossing {
+                            at,
+                            horizontal: h,
+                            vertical: v,
+                        };
+                        crossing_point(pa[0], pa[1], pb[0], pb[1])
+                            .map(|at| crossing((i, sa), (j, sb), at))
+                            .or_else(|| {
+                                crossing_point(pb[0], pb[1], pa[0], pa[1])
+                                    .map(|at| crossing((j, sb), (i, sa), at))
+                            })
+                    })
+                })
+            })
+    })
 }

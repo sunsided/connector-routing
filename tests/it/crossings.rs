@@ -202,3 +202,43 @@ proptest! {
         }
     }
 }
+
+/// `crossing::iter_points` agrees with `check::orthogonal_crossings` pair by pair, and
+/// every point lies inside both of its segments.
+#[test]
+fn crossing_points_match_counts_and_segments() {
+    let p = |pts: &[(i32, i32)]| {
+        pts.iter()
+            .map(|&(x, y)| Point::new(x, y))
+            .collect::<Vec<_>>()
+    };
+    let routes = [
+        p(&[(0, 5), (20, 5), (20, 15), (0, 15)]),
+        p(&[(5, 0), (5, 20)]),
+        p(&[(10, 0), (10, 5), (30, 5)]),
+        p(&[(15, -5), (15, 25)]),
+        p(&[(0, 0), (8, 8)]),
+    ];
+    let points = crossing::points(&routes);
+    assert_eq!(points, crossing::iter_points(&routes).collect::<Vec<_>>());
+
+    let expected: usize = (0..routes.len())
+        .flat_map(|i| (i + 1..routes.len()).map(move |j| (i, j)))
+        .map(|(i, j)| check::orthogonal_crossings(&routes[i], &routes[j]))
+        .sum();
+    // Route 0 crosses 1 and 3 twice each and route 2 crosses 3 once. Route 2 only
+    // touches or overlaps route 0, and the diagonal route 4 is skipped.
+    assert_eq!(expected, 5);
+    assert_eq!(points.len(), expected);
+
+    for c in &points {
+        let (hr, hs) = c.horizontal;
+        let (vr, vs) = c.vertical;
+        assert_ne!(hr, vr);
+        let (h0, h1) = (routes[hr][hs], routes[hr][hs + 1]);
+        let (v0, v1) = (routes[vr][vs], routes[vr][vs + 1]);
+        assert_eq!((h0.y, h1.y, v0.x, v1.x), (c.at.y, c.at.y, c.at.x, c.at.x));
+        assert!(h0.x.min(h1.x) < c.at.x && c.at.x < h0.x.max(h1.x));
+        assert!(v0.y.min(v1.y) < c.at.y && c.at.y < v0.y.max(v1.y));
+    }
+}

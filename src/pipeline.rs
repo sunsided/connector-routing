@@ -159,7 +159,7 @@ pub fn draw(boxes: &[Rect], edges: &[(usize, usize)], config: &Config) -> Result
 
     Ok(Drawing {
         ports,
-        crossings: crossings(&routes),
+        crossings: crossing::iter_points(&routes).count(),
         routes,
         overuse,
         separation: nudged.separation,
@@ -220,14 +220,4 @@ fn channel_routing(
     let routing = global::route_all_on(&graph, boxes, &ends?, &config.routing).ok()?;
 
     Some((graph, routing))
-}
-
-/// The number of crossings between different routes of a drawing.
-fn crossings(routes: &[Vec<Point>]) -> usize {
-    routes
-        .iter()
-        .enumerate()
-        .flat_map(|(i, a)| routes[i + 1..].iter().map(move |b| (a, b)))
-        .map(|(a, b)| crate::check::orthogonal_crossings(a, b))
-        .sum()
 }

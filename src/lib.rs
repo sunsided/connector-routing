@@ -27,7 +27,8 @@
 //!   1-bend visibility graph of Marriott et al. (2014) is available as [`Search::OneBend`].
 //! - [`global::route_all`]: many connectors with `PathFinder` negotiated congestion over
 //!   channel capacities, rip-up and reroute, and crossing penalties.
-//! - [`crossing`]: required crossings between routes and crossing reduction.
+//! - [`crossing`]: required crossings between routes, crossing reduction, and the
+//!   crossing points of finished routes for drawing hops.
 //! - [`nudge`]: ordering of shared segments and exact separation by difference
 //!   constraints (no LP); the constraints are exported for layout engines.
 //! - [`pipeline::draw`]: the pipeline of arXiv 2309.01671 from boxes and edges to a

@@ -61,7 +61,7 @@ Orthogonal routing:
 - 1-bend visibility graph search (Marriott, Stuckey and Wybrow 2014), opt-in: tests show it is not exact in general, so the OVG search is the default
 - Global routing: PathFinder negotiated congestion over channel capacities, rip-up and reroute, crossing penalties, deterministic net order
 - Reports of the connectors a scene change invalidates or may improve
-- Path ordering in shared channels, required crossings, crossing reduction
+- Path ordering in shared channels, required crossings, crossing reduction, crossing points of finished routes (for drawing hops)
 - Nudging: scan-line separation constraints (exported as data) solved exactly as difference constraints with water-filling, no LP; or VPSC projection of desired positions
 - Pipeline of arXiv 2309.01671: port assignment, visibility or channel routing graph, routing, crossing reduction, ordering, constrained or full nudging (boxes move and grow)
 - Hyperedges (Wybrow et al. 2012): Steiner trees by both heuristics with segment-shifting improvement, nudged like connectors
