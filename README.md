@@ -18,6 +18,8 @@ hyperedges (Steiner trees for nets with more than two ports) and any-angle routi
 sleeves or poly-lines for when the lines need not be orthogonal. All geometry is exact integer arithmetic, so results are reproducible and free
 of floating-point robustness issues; the crate is `no_std` with `alloc`.
 
+Part of the [planning and search crates](https://sunsided.github.io/planning-and-search/); see also this crate's [overview page](https://sunsided.github.io/planning-and-search/crates/connector-routing/).
+
 ![Ten connectors between seven boxes, routed orthogonally by pipeline::draw and any-angle by SleeveRouter](https://raw.githubusercontent.com/sunsided/connector-routing/main/docs/routing.svg)
 
 The drawing above is the output of `cargo run --example svg`.

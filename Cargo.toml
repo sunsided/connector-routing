@@ -7,6 +7,7 @@ rust-version = "1.86"
 authors = ["Markus Mayer <widemeadows@gmail.com>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/sunsided/connector-routing"
+homepage = "https://sunsided.github.io/planning-and-search/crates/connector-routing/"
 readme = "README.md"
 keywords = ["connector", "routing", "orthogonal", "diagram", "edge-routing"]
 categories = ["algorithms", "graphics", "visualization", "no-std"]
